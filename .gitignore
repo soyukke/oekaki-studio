@@ -1,0 +1,7 @@
+.build/
+build/
+local.mk
+.DS_Store
+*.xcodeproj
+.swiftpm/
+out/

@@ -1,0 +1,14 @@
+name: 要望・アイデア
+description: こんな機能がほしい、ここを変えてほしい
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: idea
+    attributes:
+      label: どうなってほしいですか
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: どんな場面で困っていますか（あれば）

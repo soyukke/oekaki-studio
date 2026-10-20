@@ -1,0 +1,43 @@
+name: 不具合の報告
+description: 思ったとおりに動かない、止まる、表示がおかしい、など
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: 報告ありがとうございます。わかる範囲で大丈夫です。
+  - type: textarea
+    id: what
+    attributes:
+      label: 何が起きましたか
+      description: 画面のようすや、出たメッセージを教えてください。
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: どうすると起きますか
+      placeholder: |
+        1. ブラシで線を引く
+        2. 「取り消す」を押す
+        3. ...
+  - type: textarea
+    id: expected
+    attributes:
+      label: 本当はどうなってほしかったですか
+  - type: input
+    id: app-version
+    attributes:
+      label: アプリのバージョン
+      description: メニューの「Oekaki Studio について」で確認できます。
+      placeholder: "0.1.0"
+  - type: input
+    id: macos-version
+    attributes:
+      label: macOS のバージョン
+      description: アップルメニューの「この Mac について」で確認できます。
+      placeholder: "macOS 15.3"
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: スクリーンショット（あれば）
+      description: 画像をここにドラッグ＆ドロップすると添付できます。

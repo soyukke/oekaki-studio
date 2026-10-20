@@ -1,0 +1,281 @@
+// Pixel-mask algorithms behind the paint bucket.
+//
+// The host owns every buffer and passes scratch space in, so nothing here
+// allocates. Masks are one byte per pixel, row 0 at the top of the picture.
+
+fn channel_gap(a: u8, b: u8) -> i64 {
+    let x = cast<i64>(a);
+    let y = cast<i64>(b);
+    if x > y {
+        return x - y;
+    }
+    return y - x;
+}
+
+// Grows the set cells of `src` by `radius` in every direction (a square
+// window) and writes 0 / 1 into `dst`. `tmp` holds the horizontal pass.
+fn dilate(src: []u8, dst: &var []u8, tmp: &var []u8, w: i64, h: i64, radius: i64) -> void {
+    for 0..h |y| {
+        let row = y * w;
+        var inside: i64 = 0;
+        var lead: i64 = 0;
+        while lead <= radius and lead < w {
+            if src[row + lead] != cast<u8>(0) {
+                inside = inside + 1;
+            }
+            lead = lead + 1;
+        }
+        for 0..w |x| {
+            if inside > 0 {
+                tmp[row + x] = cast<u8>(1);
+            } else {
+                tmp[row + x] = cast<u8>(0);
+            }
+            if x - radius >= 0 and src[row + x - radius] != cast<u8>(0) {
+                inside = inside - 1;
+            }
+            if x + radius + 1 < w and src[row + x + radius + 1] != cast<u8>(0) {
+                inside = inside + 1;
+            }
+        }
+    }
+    for 0..w |x| {
+        var inside: i64 = 0;
+        var lead: i64 = 0;
+        while lead <= radius and lead < h {
+            if tmp[lead * w + x] != cast<u8>(0) {
+                inside = inside + 1;
+            }
+            lead = lead + 1;
+        }
+        for 0..h |y| {
+            if inside > 0 {
+                dst[y * w + x] = cast<u8>(1);
+            } else {
+                dst[y * w + x] = cast<u8>(0);
+            }
+            if y - radius >= 0 and tmp[(y - radius) * w + x] != cast<u8>(0) {
+                inside = inside - 1;
+            }
+            if y + radius + 1 < h and tmp[(y + radius + 1) * w + x] != cast<u8>(0) {
+                inside = inside + 1;
+            }
+        }
+    }
+    return;
+}
+
+// Marks every cell reachable from `start` without crossing `barrier`.
+// `marks` must be zeroed; `pending` is scratch with one slot per cell.
+fn flood(barrier: []u8, marks: &var []u8, pending: &var []i32, w: i64, n: i64, start: i64) -> void {
+    var top: i64 = 1;
+    marks[start] = cast<u8>(1);
+    pending[0] = cast<i32>(start);
+    while top > 0 {
+        top = top - 1;
+        let cell = cast<i64>(pending[top]);
+        let x = cell % w;
+        if x > 0 and marks[cell - 1] == cast<u8>(0) and barrier[cell - 1] == cast<u8>(0) {
+            marks[cell - 1] = cast<u8>(1);
+            pending[top] = cast<i32>(cell - 1);
+            top = top + 1;
+        }
+        if x < w - 1 and marks[cell + 1] == cast<u8>(0) and barrier[cell + 1] == cast<u8>(0) {
+            marks[cell + 1] = cast<u8>(1);
+            pending[top] = cast<i32>(cell + 1);
+            top = top + 1;
+        }
+        if cell >= w and marks[cell - w] == cast<u8>(0) and barrier[cell - w] == cast<u8>(0) {
+            marks[cell - w] = cast<u8>(1);
+            pending[top] = cast<i32>(cell - w);
+            top = top + 1;
+        }
+        if cell + w < n and marks[cell + w] == cast<u8>(0) and barrier[cell + w] == cast<u8>(0) {
+            marks[cell + w] = cast<u8>(1);
+            pending[top] = cast<i32>(cell + w);
+            top = top + 1;
+        }
+    }
+    return;
+}
+
+// The free cell nearest to the seed within `reach`, or -1.
+fn nearest_free(barrier: []u8, w: i64, h: i64, seed_x: i64, seed_y: i64, reach: i64) -> i64 {
+    var best: i64 = -1;
+    var best_distance: i64 = 0;
+    for 0..(2 * reach + 1) |row| {
+        let y = seed_y + row - reach;
+        if y < 0 or y >= h {
+            continue;
+        }
+        for 0..(2 * reach + 1) |column| {
+            let x = seed_x + column - reach;
+            if x < 0 or x >= w {
+                continue;
+            }
+            if barrier[y * w + x] != cast<u8>(0) {
+                continue;
+            }
+            let dx = x - seed_x;
+            let dy = y - seed_y;
+            let distance = dx * dx + dy * dy;
+            if best < 0 or distance < best_distance {
+                best = y * w + x;
+                best_distance = distance;
+            }
+        }
+    }
+    return best;
+}
+
+// Paint-bucket fill on an RGBA8 picture (4 bytes per pixel).
+//
+// The region is every pixel connected to the seed whose colour is within
+// `tolerance` of the seed's colour. Openings in the outline narrower than
+// about 2 * `gap` pixels are treated as closed.
+//
+// Outputs, one byte per pixel, 0 or 255:
+//   `interior`  the region itself
+//   `full`      the region grown by a 2 pixel ring, to tuck paint under the
+//               soft edge of the outline
+//   `bbox`      min x, min y, max x, max y of `full` (inclusive)
+// Returns the number of interior pixels, or 0 when nothing was filled.
+// `wall`, `thick` and `tmp` are scratch, one byte per pixel; `stack` is
+// scratch, one i32 per pixel.
+export "c" fn core_bucket_fill(
+    rgba: ptr<const u8>,
+    width: i32,
+    height: i32,
+    seed_x: i32,
+    seed_y: i32,
+    tolerance: i32,
+    gap: i32,
+    wall: ptr<u8>,
+    thick: ptr<u8>,
+    tmp: ptr<u8>,
+    interior: ptr<u8>,
+    full: ptr<u8>,
+    stack: ptr<i32>,
+    bbox: ptr<i32>,
+) -> i64 {
+    let w = cast<i64>(width);
+    let h = cast<i64>(height);
+    let n = w * h;
+    let sx = cast<i64>(seed_x);
+    let sy = cast<i64>(seed_y);
+    if w <= 0 or h <= 0 or sx < 0 or sy < 0 or sx >= w or sy >= h {
+        return 0;
+    }
+    // SAFETY: the host passes width * height pixels of 4 readable bytes.
+    let pixels = unsafe view_from_ptr(rgba, n * 4);
+    // SAFETY: the host passes width * height writable bytes for each mask.
+    let walls = unsafe mut_view_from_ptr(wall, n);
+    // SAFETY: as above.
+    let thicks = unsafe mut_view_from_ptr(thick, n);
+    // SAFETY: as above.
+    let scratch = unsafe mut_view_from_ptr(tmp, n);
+    // SAFETY: as above.
+    let inner = unsafe mut_view_from_ptr(interior, n);
+    // SAFETY: as above.
+    let outer = unsafe mut_view_from_ptr(full, n);
+    // SAFETY: the host passes width * height writable i32 slots.
+    let pending = unsafe mut_view_from_ptr(stack, n);
+    // SAFETY: the host passes four writable i32 slots.
+    let bounds = unsafe mut_view_from_ptr(bbox, 4);
+
+    let seed = sy * w + sx;
+    let limit = cast<i64>(tolerance);
+    let r0 = pixels[seed * 4];
+    let g0 = pixels[seed * 4 + 1];
+    let b0 = pixels[seed * 4 + 2];
+    let a0 = pixels[seed * 4 + 3];
+    for 0..n |cell| {
+        let at = cell * 4;
+        var differs = false;
+        if channel_gap(pixels[at], r0) > limit {
+            differs = true;
+        }
+        if channel_gap(pixels[at + 1], g0) > limit {
+            differs = true;
+        }
+        if channel_gap(pixels[at + 2], b0) > limit {
+            differs = true;
+        }
+        if channel_gap(pixels[at + 3], a0) > limit {
+            differs = true;
+        }
+        if differs {
+            walls[cell] = cast<u8>(1);
+        } else {
+            walls[cell] = cast<u8>(0);
+        }
+        outer[cell] = cast<u8>(0);
+    }
+
+    // Thickened walls close small openings in the outline.
+    var grow = cast<i64>(gap);
+    if grow < 0 {
+        grow = 0;
+    }
+    dilate(walls, &var thicks, &var scratch, w, h, grow);
+    var start = seed;
+    if thicks[seed] != cast<u8>(0) {
+        let near = nearest_free(thicks, w, h, sx, sy, grow + 2);
+        if near >= 0 {
+            start = near;
+        } else {
+            // The seed sits in a region thinner than the gap (a line, say):
+            // fill it as it is, without closing openings.
+            grow = 0;
+            for 0..n |cell| {
+                thicks[cell] = walls[cell];
+            }
+        }
+    }
+
+    flood(thicks, &var outer, &var pending, w, n, start);
+
+    // Undo the thickening, without stepping onto the real walls.
+    dilate(outer, &var inner, &var scratch, w, h, grow);
+    for 0..n |cell| {
+        if walls[cell] != cast<u8>(0) {
+            inner[cell] = cast<u8>(0);
+        }
+    }
+    dilate(inner, &var outer, &var scratch, w, h, 2);
+
+    var count: i64 = 0;
+    var min_x = w;
+    var min_y = h;
+    var max_x: i64 = -1;
+    var max_y: i64 = -1;
+    for 0..h |y| {
+        for 0..w |x| {
+            let cell = y * w + x;
+            if inner[cell] != cast<u8>(0) {
+                inner[cell] = cast<u8>(255);
+                count = count + 1;
+            }
+            if outer[cell] != cast<u8>(0) {
+                outer[cell] = cast<u8>(255);
+                if x < min_x {
+                    min_x = x;
+                }
+                if x > max_x {
+                    max_x = x;
+                }
+                if y < min_y {
+                    min_y = y;
+                }
+                if y > max_y {
+                    max_y = y;
+                }
+            }
+        }
+    }
+    bounds[0] = cast<i32>(min_x);
+    bounds[1] = cast<i32>(min_y);
+    bounds[2] = cast<i32>(max_x);
+    bounds[3] = cast<i32>(max_y);
+    return count;
+}
