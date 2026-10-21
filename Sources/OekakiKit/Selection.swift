@@ -5,14 +5,15 @@ import Foundation
 /// cursors: whatever is done to one selected item is done to all of them,
 /// and taken back in one step.
 extension CanvasDocument {
-    /// Where an item sits inside a use of a part: the part and the item's place in it.
-    func partItem(_ id: Int) -> (component: UUID, index: Int)? {
+    /// Where an item sits inside a use of a part: the part, the drawing the
+    /// use shows, and the item's place in it.
+    func partItem(_ id: Int) -> (component: UUID, look: UUID?, index: Int)? {
         for layer in layers {
             for item in layer.items.flatMap(\.flattened) {
                 guard case .instance(let instance) = item,
                       let index = instance.content.firstIndex(where: { $0.flattened.contains { $0.id == id } })
                 else { continue }
-                return (instance.component, index)
+                return (instance.component, instance.look, index)
             }
         }
         return nil
@@ -40,8 +41,9 @@ extension CanvasDocument {
         var changedParts = Set<UUID>()
         for id in ids {
             if let place = partItem(id), let index = parts.components.firstIndex(where: { $0.id == place.component }),
-               parts.components[index].items.indices.contains(place.index) {
-                change(&parts.components[index].items[place.index])
+               case let look = parts.components[index].lookIndex(place.look),
+               parts.components[index].looks[look].items.indices.contains(place.index) {
+                change(&parts.components[index].looks[look].items[place.index])
                 changedParts.insert(place.component)
                 continue
             }

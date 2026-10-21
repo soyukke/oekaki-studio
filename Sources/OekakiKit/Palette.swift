@@ -89,7 +89,9 @@ extension CanvasDocument {
     func recolorEverything() {
         let colors = library.colors
         for index in library.components.indices {
-            library.components[index].items = library.components[index].items.map { $0.recolored(colors) }
+            for look in library.components[index].looks.indices {
+                library.components[index].looks[look].items = library.components[index].looks[look].items.map { $0.recolored(colors) }
+            }
         }
         for index in layers.indices {
             let named = layers[index].items.filter { !$0.colorRefs.isEmpty }

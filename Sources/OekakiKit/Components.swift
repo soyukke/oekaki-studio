@@ -4,12 +4,12 @@ import Foundation
 /// Parts: items drawn once and put on the canvas many times, like a function
 /// called from many places. Changing the part changes every use of it.
 extension CanvasDocument {
-    /// What a use of `part` draws: the part's items placed and coloured for
-    /// it. Keeps the numbers the use's items already have.
+    /// What a use of `part` draws: the items of the drawing it shows, placed
+    /// and coloured for it. Keeps the numbers the use's items already have.
     static func placed(_ part: Component, _ use: InstanceItem, colors: [UUID: RGBA]) -> [LayerItem] {
         let own = colors.merging(use.overrides) { _, mine in mine }
         let transform = use.placement.transform
-        return part.items.enumerated().map { index, item in
+        return part.items(for: use.look).enumerated().map { index, item in
             let drawn = item.transformed(by: transform).recolored(own)
             // A new use's items get numbers of their own when it is put down.
             return use.content.indices.contains(index) ? Self.renumbered(drawn, like: use.content[index]) : Self.renumbered(drawn, like: nil)
@@ -168,8 +168,9 @@ extension CanvasDocument {
         return (use, found.component, others)
     }
 
-    /// Puts the items into the part used by `useID`, where they are now on
-    /// the canvas, so every use of the part gains them. They leave their layers.
+    /// Puts the items into the drawing of the part that `useID` shows, where
+    /// they are now on the canvas, so every use showing it gains them. They
+    /// leave their layers.
     public func addToComponent(_ ids: [Int], joining useID: Int) {
         guard liveStroke == nil, case .instance(let use)? = item(useID)?.item,
               let partIndex = library.components.firstIndex(where: { $0.id == use.component })
@@ -185,9 +186,10 @@ extension CanvasDocument {
         guard !picked.isEmpty else { return }
         let toPart = use.placement.transform.inverted()
         let name = library.components[partIndex].name
+        let look = library.components[partIndex].lookIndex(use.look)
         let words = describe(picked.map(\.item.id))
         transaction {
-            changeLibrary { $0.components[partIndex].items += picked.map { $0.item.transformed(by: toPart) } }
+            changeLibrary { $0.components[partIndex].looks[look].items += picked.map { $0.item.transformed(by: toPart) } }
             let taken = Set(picked.map(\.item.id))
             for index in Set(picked.map(\.layer)) {
                 revisionCounter += 1
@@ -199,28 +201,35 @@ extension CanvasDocument {
         nextStepNote = L("部品「\(name)」に\(words)を足した", "Added \(words) to the part \"\(name)\"")
     }
 
-    /// Takes the items, which are inside uses of a part, out of the part, so
-    /// they go from every use. A part keeps at least one item.
+    /// Takes the items, which are inside uses of a part, out of the drawing
+    /// those uses show, so they go from every use showing it. A drawing keeps
+    /// at least one item.
     public func removeFromComponent(_ ids: [Int]) {
         guard liveStroke == nil else { return }
-        var gone: [UUID: Set<Int>] = [:]
+        struct Drawing: Hashable { var part: UUID; var look: Int }
+        var gone: [Drawing: Set<Int>] = [:]
         for id in ids {
-            if let place = partItem(id) { gone[place.component, default: []].insert(place.index) }
+            if let place = partItem(id), let part = library.component(place.component) {
+                gone[Drawing(part: place.component, look: part.lookIndex(place.look)), default: []].insert(place.index)
+            }
         }
-        guard gone.count == 1, let (partID, indices) = gone.first,
-              let partIndex = library.components.firstIndex(where: { $0.id == partID }),
-              indices.count < library.components[partIndex].items.count
+        guard gone.count == 1, let (drawing, indices) = gone.first,
+              let partIndex = library.components.firstIndex(where: { $0.id == drawing.part }),
+              indices.count < library.components[partIndex].looks[drawing.look].items.count
         else { return }
-        let name = library.components[partIndex].name
+        let partID = drawing.part
+        let part = library.components[partIndex]
+        let name = part.name
         let words = describe(ids.filter { partItem($0) != nil })
         transaction {
             changeLibrary { library in
-                library.components[partIndex].items = library.components[partIndex].items.enumerated().filter { !indices.contains($0.offset) }.map(\.element)
+                let items = library.components[partIndex].looks[drawing.look].items
+                library.components[partIndex].looks[drawing.look].items = items.enumerated().filter { !indices.contains($0.offset) }.map(\.element)
             }
-            // Each use lets go of the same items, so the rest keep their numbers.
+            // Each use showing it lets go of the same items, so the rest keep their numbers.
             for index in layers.indices {
                 layers[index].items = layers[index].items.map { item in
-                    guard case .instance(var use) = item, use.component == partID else { return item }
+                    guard case .instance(var use) = item, use.component == partID, part.lookIndex(use.look) == drawing.look else { return item }
                     use.content = use.content.enumerated().filter { !indices.contains($0.offset) }.map(\.element)
                     return .instance(use)
                 }
@@ -230,11 +239,110 @@ extension CanvasDocument {
         nextStepNote = L("部品「\(name)」から\(words)を消した", "Took \(words) out of the part \"\(name)\"")
     }
 
+    /// Gives the part that `useID` shows another drawing, a copy of the one
+    /// shown there, and shows the copy there, ready to be changed: a smile
+    /// drawn over a copy of the plain face. The other uses stay as they were.
+    /// Returns the new drawing.
+    @discardableResult
+    public func addLook(copying useID: Int, named name: String) -> UUID? {
+        guard liveStroke == nil, case .instance(let use)? = item(useID)?.item,
+              let partIndex = library.components.firstIndex(where: { $0.id == use.component })
+        else { return nil }
+        let part = library.components[partIndex]
+        let look = ComponentLook(name: name, items: part.items(for: use.look))
+        transaction {
+            changeLibrary { $0.components[partIndex].looks.append(look) }
+            show(look.id, at: useID)
+        }
+        nextStepNote = L("部品「\(part.name)」に描き分け「\(look.title)」を足した", "Added the variation \"\(look.title)\" to the part \"\(part.name)\"")
+        return look.id
+    }
+
+    /// Shows the part's drawing `look` at this one use only.
+    public func setLook(_ useID: Int, _ look: UUID) {
+        guard liveStroke == nil, case .instance(let use)? = item(useID)?.item,
+              let part = library.component(use.component), part.lookIndex(use.look) != part.lookIndex(look),
+              let shown = part.looks.first(where: { $0.id == look })
+        else { return }
+        transaction { show(look, at: useID) }
+        nextStepNote = L("ここに置いた「\(part.name)」を「\(shown.title)」にした", "Showed \"\(shown.title)\" for this copy of \"\(part.name)\"")
+    }
+
+    /// Draws the use `useID` from its part's drawing `look`. Part of the step already begun.
+    private func show(_ look: UUID, at useID: Int) {
+        guard let part = item(useID).flatMap({ found -> Component? in
+            guard case .instance(let use) = found.item else { return nil }
+            return library.component(use.component)
+        }) else { return }
+        let colors = library.colors
+        for index in layers.indices {
+            var items = layers[index].items
+            let changed = Self.modify(&items, id: useID) { item in
+                guard case .instance(var use) = item else { return }
+                use.look = part.lookIndex(look) == 0 ? nil : look
+                use.content = Self.placed(part, use, colors: colors)
+                item = .instance(use)
+            }
+            guard changed else { continue }
+            // A drawing with more items than the last one gives the new ones numbers.
+            layers[index].items = items.map { Self.numbered($0, counter: &itemCounter) }
+            revisionCounter += 1
+            layers[index].revision = revisionCounter
+            touch(useID, inLayerAt: index)
+            break
+        }
+        syncCaches()
+        invalidate(nil)
+    }
+
+    /// Renames one of a part's drawings.
+    public func renameLook(_ partID: UUID, _ look: UUID, to name: String) {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, let partIndex = library.components.firstIndex(where: { $0.id == partID }),
+              let lookIndex = library.components[partIndex].looks.firstIndex(where: { $0.id == look }),
+              library.components[partIndex].looks[lookIndex].name != trimmed
+        else { return }
+        changeLibrary { $0.components[partIndex].looks[lookIndex].name = trimmed }
+        nextStepNote = L("描き分けの名前を「\(trimmed)」にした", "Renamed a variation to \"\(trimmed)\"")
+    }
+
+    /// Takes one of a part's drawings away. The uses that showed it show the
+    /// first drawing instead. A part keeps at least one drawing.
+    public func removeLook(_ partID: UUID, _ look: UUID) {
+        guard liveStroke == nil, let partIndex = library.components.firstIndex(where: { $0.id == partID }),
+              library.components[partIndex].looks.count > 1,
+              let lookIndex = library.components[partIndex].looks.firstIndex(where: { $0.id == look })
+        else { return }
+        let title = library.components[partIndex].looks[lookIndex].title
+        transaction {
+            changeLibrary { $0.components[partIndex].looks.remove(at: lookIndex) }
+            for index in layers.indices {
+                layers[index].items = layers[index].items.map { item in
+                    guard case .instance(var use) = item, use.component == partID, use.look == look else { return item }
+                    use.look = nil
+                    return .instance(use)
+                }
+            }
+            refreshUses(of: partID)
+        }
+        nextStepNote = L("描き分け「\(title)」を消した", "Deleted the variation \"\(title)\"")
+    }
+
     /// Renames a part.
     public func renameComponent(_ id: UUID, to name: String) {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, let index = library.components.firstIndex(where: { $0.id == id }) else { return }
         changeLibrary { $0.components[index].name = trimmed }
+    }
+
+    /// Every use of a part that shows its drawing `look`, by number.
+    public func uses(of partID: UUID, showing look: UUID) -> [Int] {
+        guard let part = library.component(partID) else { return [] }
+        let wanted = part.lookIndex(look)
+        return layers.flatMap { $0.items.flatMap(\.flattened) }.compactMap { item in
+            if case .instance(let use) = item, use.component == partID, part.lookIndex(use.look) == wanted { return use.id }
+            return nil
+        }
     }
 
     /// Every use of a part, by number.

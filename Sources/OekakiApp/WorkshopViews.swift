@@ -33,6 +33,7 @@ struct SelectionInspector: View {
     @ObservedObject var document: CanvasDocument
     @ObservedObject var tools: ToolState
     @State private var partName = ""
+    @State private var lookName = ""
     private let chipColumns = Array(repeating: GridItem(.fixed(18), spacing: 4), count: 7)
 
     private var ids: [Int] { tools.selection.filter { document.item($0) != nil } }
@@ -231,9 +232,11 @@ struct SelectionInspector: View {
         }
     }
 
-    /// Where one use of a part is, and its own colours.
+    /// Where one use of a part is, which drawing it shows, and its own colours.
     @ViewBuilder private func placement(_ use: InstanceItem, _ part: Component) -> some View {
-        Text(L("どれか 1 つの線を直すと、全部が同じに変わる。色だけは 1 つずつ変えられる", "Change a line in any copy and every copy changes; colours can differ copy by copy"))
+        Text(part.looks.count > 1
+            ? L("線を直すと、同じ絵を出している所が全部同じに変わる。色だけは 1 つずつ変えられる", "Change a line and every copy showing the same drawing changes; colours can differ copy by copy")
+            : L("どれか 1 つの線を直すと、全部が同じに変わる。色だけは 1 つずつ変えられる", "Change a line in any copy and every copy changes; colours can differ copy by copy"))
             .font(.system(size: 10)).foregroundStyle(.secondary)
             .fixedSize(horizontal: false, vertical: true)
         GuideSlider(
@@ -261,7 +264,8 @@ struct SelectionInspector: View {
         }))
         .toggleStyle(.checkbox)
         .font(.system(size: 11))
-        let named = document.library.swatches.filter { swatch in part.items.contains { $0.colorRefs.contains(swatch.id) } }
+        looks(use, part)
+        let named = document.library.swatches.filter { swatch in part.allItems.contains { $0.colorRefs.contains(swatch.id) } }
         if !named.isEmpty {
             SectionTitle(text: L("ここに置いた 1 つだけの色", "Colours for This Copy Only"))
             ForEach(named) { swatch in
@@ -286,6 +290,59 @@ struct SelectionInspector: View {
         Button(L("この 1 つだけ切り離す", "Cut This One Loose")) { document.detach(use.id) }
             .controlSize(.small)
             .help(L("部品とのつながりを切って、ふつうのまとまりにします", "Turn it into a plain group that no longer follows the part"))
+    }
+}
+
+extension SelectionInspector {
+    /// The part's drawings: which one this copy shows, and making another
+    /// from a copy of it, like the sheets of a character drawn many ways.
+    @ViewBuilder fileprivate func looks(_ use: InstanceItem, _ part: Component) -> some View {
+        let shown = part.lookIndex(use.look)
+        SectionTitle(text: L("描き分け（差分）", "Variations"))
+        Text(L("向きや表情を変えた絵を、1 つの部品にまとめておける。選んだ絵は、ここに置いた 1 つだけに出る", "Keep other angles or faces of it in the one part. The drawing you pick shows on this copy only"))
+            .font(.system(size: 10)).foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+        ForEach(Array(part.looks.enumerated()), id: \.element.id) { index, look in
+            HStack(spacing: 6) {
+                Button { document.setLook(use.id, look.id) } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: index == shown ? "checkmark.circle.fill" : "circle")
+                            .foregroundStyle(index == shown ? Color.accentColor : .secondary)
+                        Text(look.title).font(.system(size: 12))
+                    }
+                }
+                .buttonStyle(.plain)
+                .help(L("ここに置いた 1 つを、この絵にします", "Show this drawing on this copy"))
+                Spacer()
+                Text(L("\(document.uses(of: part.id, showing: look.id).count) か所", "\(document.uses(of: part.id, showing: look.id).count) copies"))
+                    .font(.system(size: 10)).foregroundStyle(.secondary)
+                if part.looks.count > 1 {
+                    Button { document.removeLook(part.id, look.id) } label: { Image(systemName: "trash") }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(.secondary)
+                        .help(L("この絵を消します。この絵を出していた所は「\(part.looks[0].title)」に戻ります", "Delete this drawing; copies showing it go back to \"\(part.looks[0].title)\""))
+                }
+            }
+        }
+        HStack(spacing: 4) {
+            TextField(L("絵の名前（例：笑顔）", "Name (e.g. Smile)"), text: $lookName)
+                .textFieldStyle(.roundedBorder)
+                .controlSize(.small)
+            Button(L("写して足す", "Copy as New")) {
+                let name = lookName.isEmpty ? L("差分 \(part.looks.count + 1)", "Variation \(part.looks.count + 1)") : lookName
+                document.addLook(copying: use.id, named: name)
+                lookName = ""
+            }
+            .controlSize(.small)
+            .help(L("今の絵を写して新しい絵にし、ここに出します。写した絵の線を直しても、ほかの絵は変わりません", "Copies the drawing shown here as a new one and shows it here; changing its lines leaves the other drawings alone"))
+            Button(L("名前を付ける", "Rename")) {
+                document.renameLook(part.id, part.looks[shown].id, to: lookName)
+                lookName = ""
+            }
+            .controlSize(.small)
+            .disabled(lookName.trimmingCharacters(in: .whitespaces).isEmpty)
+            .help(L("ここに出している絵の名前を変えます", "Renames the drawing shown here"))
+        }
     }
 }
 
@@ -416,7 +473,9 @@ struct PartsPanel: View {
                         Image(systemName: "square.on.square.dashed").foregroundStyle(.secondary)
                         VStack(alignment: .leading, spacing: 1) {
                             Text(part.name).font(.system(size: 12, weight: .medium))
-                            Text(L("\(document.uses(of: part.id).count) か所に置いています", "Used \(document.uses(of: part.id).count) times"))
+                            Text(part.looks.count > 1
+                                ? L("絵 \(part.looks.count) 枚・\(document.uses(of: part.id).count) か所に置いています", "\(part.looks.count) drawings, used \(document.uses(of: part.id).count) times")
+                                : L("\(document.uses(of: part.id).count) か所に置いています", "Used \(document.uses(of: part.id).count) times"))
                                 .font(.system(size: 10)).foregroundStyle(.secondary)
                         }
                         Spacer()

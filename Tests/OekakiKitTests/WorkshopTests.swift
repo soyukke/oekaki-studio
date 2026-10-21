@@ -258,13 +258,13 @@ final class WorkshopTests: XCTestCase {
         XCTAssertEqual(found.others, [extra])
         document.addToComponent(found.others, joining: found.use)
         XCTAssertNil(document.item(extra), "the line left its layer")
-        XCTAssertEqual(document.library.component(part)?.items.count, 3)
+        XCTAssertEqual(document.library.component(part)?.items(for: nil).count, 3)
         XCTAssertTrue(close(color(document, 54, 54), red), "the first use has it where it was drawn")
         XCTAssertTrue(close(color(document, 168, 128), red), "the bigger use has it too, twice as big")
         XCTAssertEqual(document.nextStepNote, "部品「きらめき」に線 1 本を足した")
         document.undo()
         XCTAssertNotNil(document.item(extra))
-        XCTAssertEqual(document.library.component(part)?.items.count, 2)
+        XCTAssertEqual(document.library.component(part)?.items(for: nil).count, 2)
         XCTAssertTrue(close(color(document, 168, 128), .white))
         document.redo()
         XCTAssertTrue(close(color(document, 168, 128), red))
@@ -274,7 +274,7 @@ final class WorkshopTests: XCTestCase {
         let across = big.content[1].id
         XCTAssertTrue(close(color(document, 120, 100), .black))
         document.removeFromComponent([across])
-        XCTAssertEqual(document.library.component(part)?.items.count, 2)
+        XCTAssertEqual(document.library.component(part)?.items(for: nil).count, 2)
         XCTAssertTrue(close(color(document, 120, 100), .white), "gone from the bigger use")
         XCTAssertTrue(close(color(document, 25, 40), .white), "and from the first")
         XCTAssertTrue(close(color(document, 40, 25), .black), "the other line stays")
@@ -282,7 +282,7 @@ final class WorkshopTests: XCTestCase {
         // The last item of a part is kept.
         guard case .instance(let fewer) = document.item(second)!.item else { return XCTFail("a use") }
         document.removeFromComponent(fewer.content.map(\.id))
-        XCTAssertEqual(document.library.component(part)?.items.count, 2)
+        XCTAssertEqual(document.library.component(part)?.items(for: nil).count, 2)
         // Saved and opened again, and replayed, it looks the same.
         let probes: [(CGFloat, CGFloat)] = [(54, 54), (168, 128), (120, 100), (40, 25)]
         let looks = probes.map { color(document, $0.0, $0.1) }

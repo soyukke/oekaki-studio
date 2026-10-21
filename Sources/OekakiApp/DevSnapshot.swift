@@ -16,7 +16,8 @@ import OekakiKit
 /// `OEKAKI_DEMO=paint` draws the sample, then shades it with an airbrush on
 /// a clipped multiply layer and lights it with a gradient on an add layer.
 /// `OEKAKI_DEMO=multi`, `colors`, `parts`, `versions` and `compare` show
-/// picking many items, named colours and colour sets, parts, and versions.
+/// picking many items, named colours and colour sets, parts, and versions;
+/// `parts-looks` gives a part a second drawing.
 /// `OEKAKI_DEMO=file` opens the document at `OEKAKI_FILE`, with the layer
 /// named `OEKAKI_LAYER` chosen if given. `OEKAKI_DEMO=shape` draws round an
 /// area with the lasso fill; `shape-done` lets go, so the area is filled.
@@ -72,6 +73,9 @@ enum DevSnapshot {
             case "parts-grow", "parts-grow-done":
                 drawSample(on: session.document)
                 drivePartsGrow(session: session, apply: ProcessInfo.processInfo.environment["OEKAKI_DEMO"] == "parts-grow-done")
+            case "parts-looks":
+                drawSample(on: session.document)
+                drivePartsLooks(session: session)
             case "parts-trim", "parts-trim-done":
                 drawSample(on: session.document)
                 drivePartsTrim(session: session, apply: ProcessInfo.processInfo.environment["OEKAKI_DEMO"] == "parts-trim-done")
@@ -340,6 +344,21 @@ enum DevSnapshot {
         return uses
     }
 
+    /// The sparkle given a second drawing, turned into an X, shown on the
+    /// last use only.
+    private static func drivePartsLooks(session: Session) {
+        let document = session.document
+        let uses = driveParts(session: session)
+        guard let last = uses.last, document.addLook(copying: last, named: L("ななめ", "Slanted")) != nil,
+              case .instance(let use)? = document.item(last)?.item
+        else { return }
+        document.updateItems(use.content.map(\.id)) { $0 = $0.transformed(by: CGAffineTransform(rotationAngle: .pi / 4)) }
+        session.tools.selection = [last]
+        session.panel = .parts
+        let part = document.library.components[0]
+        print("parts-looks: \(part.looks.map(\.title)), showing \(part.looks.map { document.uses(of: part.id, showing: $0.id).count })")
+    }
+
     /// Two more lines drawn over the first use of the part, picked with it,
     /// and with `apply` put into the part, so every use gains them.
     private static func drivePartsGrow(session: Session, apply: Bool) {
@@ -360,7 +379,7 @@ enum DevSnapshot {
             document.addToComponent(extra, joining: first)
             session.tools.selection = [first]
         }
-        print("parts-grow: part has \(document.library.components.first?.items.count ?? 0) items, \(document.uses(of: document.library.components[0].id).count) uses")
+        print("parts-grow: part has \(document.library.components.first?.items(for: nil).count ?? 0) items, \(document.uses(of: document.library.components[0].id).count) uses")
     }
 
     /// One line inside a use of the part picked, and with `apply` taken out
@@ -375,7 +394,7 @@ enum DevSnapshot {
             document.deleteItems([across])
             session.tools.selection = [uses[1]]
         }
-        print("parts-trim: part has \(document.library.components.first?.items.count ?? 0) items")
+        print("parts-trim: part has \(document.library.components.first?.items(for: nil).count ?? 0) items")
     }
 
     /// Versions asked of the real assistant; the picture is taken when they arrive.

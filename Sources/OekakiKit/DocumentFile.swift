@@ -16,7 +16,8 @@ public enum DocumentFile {
     /// 5 adds named colours, colour sets, parts and their uses, and versions.
     /// 6 adds blur on layers.
     /// 7 adds dots (screen tone) on layers.
-    static let currentVersion = 7
+    /// 8 adds parts with several drawings (variations).
+    static let currentVersion = 8
 
     public enum Failure: LocalizedError {
         case notADocument
@@ -102,7 +103,17 @@ public enum DocumentFile {
     private struct FileComponent: Codable {
         var id: UUID
         var name: String
+        /// The first drawing's items.
         var items: [FileItem]
+        /// Every drawing, when there is more than the first or it has a name.
+        /// The first one's items are `items`.
+        var looks: [FileLook]?
+    }
+
+    private struct FileLook: Codable {
+        var id: UUID
+        var name: String
+        var items: [FileItem]?
     }
 
     private struct FileInstance: Codable {
@@ -111,6 +122,8 @@ public enum DocumentFile {
         var placement: [Double]
         var flipped: Bool?
         var overrides: [String: RGBA]?
+        /// The drawing of the part it shows, if not the first.
+        var look: UUID?
     }
 
     private struct FileStep: Codable {
@@ -236,7 +249,7 @@ public enum DocumentFile {
                 return x.id == y.id && x.shape == y.shape && x.start == y.start && x.end == y.end && x.from == y.from && x.to == y.to
                     && x.fromRef == y.fromRef && x.toRef == y.toRef
             case (.instance(let x), .instance(let y)):
-                return x.id == y.id && x.component == y.component && x.placement == y.placement && x.overrides == y.overrides
+                return x.id == y.id && x.component == y.component && x.placement == y.placement && x.overrides == y.overrides && x.look == y.look
                     && x.content.count == y.content.count && zip(x.content, y.content).allSatisfy { same($0, $1) }
             case (.fill(let x), .fill(let y)):
                 return x.id == y.id && x.full === y.full && x.color == y.color && x.rect == y.rect && x.colorRef == y.colorRef
@@ -325,7 +338,7 @@ public enum DocumentFile {
             themes: library.themes.map { theme in
                 FileTheme(id: theme.id, name: theme.name, colors: Dictionary(uniqueKeysWithValues: theme.colors.map { ($0.key.uuidString, $0.value) }))
             },
-            components: try library.components.map { FileComponent(id: $0.id, name: $0.name, items: try $0.items.map(encode)) },
+            components: try library.components.map(encode),
             currentTheme: library.currentTheme
         )
     }
@@ -339,9 +352,29 @@ public enum DocumentFile {
                 UUID(uuidString: key).map { ($0, value) }
             }))
         }
-        library.components = try saved.components.map { Component(id: $0.id, name: $0.name, items: try $0.items.map(decode)) }
+        library.components = try saved.components.map(decode)
         library.currentTheme = saved.currentTheme
         return library
+    }
+
+    private static func encode(_ part: Component) throws -> FileComponent {
+        let first = part.looks[0]
+        var saved = FileComponent(id: part.id, name: part.name, items: try first.items.map(encode))
+        if part.looks.count > 1 || !first.name.isEmpty {
+            saved.looks = try part.looks.enumerated().map { index, look in
+                FileLook(id: look.id, name: look.name, items: index == 0 ? nil : try look.items.map(encode))
+            }
+        }
+        return saved
+    }
+
+    private static func decode(_ saved: FileComponent) throws -> Component {
+        let first = try saved.items.map(decode)
+        guard let looks = saved.looks, !looks.isEmpty else { return Component(id: saved.id, name: saved.name, items: first) }
+        return Component(id: saved.id, name: saved.name, looks: try looks.enumerated().map { index, look in
+            guard index == 0 || look.items != nil else { throw Failure.damaged }
+            return ComponentLook(id: look.id, name: look.name, items: index == 0 ? first : try (look.items ?? []).map(decode))
+        })
     }
 
     public static func decode(_ data: Data) throws -> CanvasDocument {
@@ -487,7 +520,8 @@ public enum DocumentFile {
                 component: use.component,
                 placement: [use.placement.center.x, use.placement.center.y, use.placement.scale, use.placement.rotation].map(Double.init),
                 flipped: use.placement.flipped ? true : nil,
-                overrides: use.overrides.isEmpty ? nil : Dictionary(uniqueKeysWithValues: use.overrides.map { ($0.key.uuidString, $0.value) })
+                overrides: use.overrides.isEmpty ? nil : Dictionary(uniqueKeysWithValues: use.overrides.map { ($0.key.uuidString, $0.value) }),
+                look: use.look
             )
             return FileItem(kind: "instance", id: use.id, items: try use.content.map(encode), instance: saved)
         case .gradient(let gradient):
@@ -543,7 +577,8 @@ public enum DocumentFile {
             )
             let overrides = Dictionary(uniqueKeysWithValues: (saved.overrides ?? [:]).compactMap { key, value in UUID(uuidString: key).map { ($0, value) } })
             return .instance(InstanceItem(
-                id: item.id ?? 0, component: saved.component, placement: placement, overrides: overrides, content: try content.map(decode)
+                id: item.id ?? 0, component: saved.component, placement: placement, overrides: overrides, look: saved.look,
+                content: try content.map(decode)
             ))
         case "bitmap":
             guard let data = item.image, let image = ImageCoding.image(fromPNG: data) else { throw Failure.damaged }

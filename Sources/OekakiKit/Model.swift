@@ -169,14 +169,17 @@ public struct InstanceItem {
     public var placement: Placement
     /// Colours for this use only, by named colour.
     public var overrides: [UUID: RGBA] = [:]
+    /// Which of the part's drawings it shows; nil for the first.
+    public var look: UUID?
     /// The part's items as this use draws them, in the same order.
     public var content: [LayerItem] = []
 
-    public init(id: Int = 0, component: UUID, placement: Placement, overrides: [UUID: RGBA] = [:], content: [LayerItem] = []) {
+    public init(id: Int = 0, component: UUID, placement: Placement, overrides: [UUID: RGBA] = [:], look: UUID? = nil, content: [LayerItem] = []) {
         self.id = id
         self.component = component
         self.placement = placement
         self.overrides = overrides
+        self.look = look
         self.content = content
     }
 }
@@ -208,18 +211,55 @@ public struct ColorTheme: Equatable, Identifiable {
     }
 }
 
-/// A part: items drawn once, which can be put on the canvas many times.
-/// Its items are in its own coordinates, centred on (0, 0).
-public struct Component: Identifiable {
+/// One drawing of a part, such as its front, its side or its smile.
+public struct ComponentLook: Identifiable {
     public var id: UUID
+    /// Empty for a part's first drawing until it is given a name.
     public var name: String
     public var items: [LayerItem]
 
-    public init(id: UUID = UUID(), name: String, items: [LayerItem]) {
+    public init(id: UUID = UUID(), name: String = "", items: [LayerItem]) {
         self.id = id
         self.name = name
         self.items = items
     }
+
+    /// The name to show.
+    public var title: String { name.isEmpty ? L("もと", "Original") : name }
+}
+
+/// A part: items drawn once, which can be put on the canvas many times.
+/// It may hold several drawings of the same thing, like a character sheet;
+/// each use shows one of them. Its items are in its own coordinates,
+/// centred on (0, 0).
+public struct Component: Identifiable {
+    public var id: UUID
+    public var name: String
+    /// Never empty. A use shows the first unless it picks another.
+    public var looks: [ComponentLook]
+
+    public init(id: UUID = UUID(), name: String, items: [LayerItem]) {
+        self.init(id: id, name: name, looks: [ComponentLook(items: items)])
+    }
+
+    public init(id: UUID = UUID(), name: String, looks: [ComponentLook]) {
+        self.id = id
+        self.name = name
+        self.looks = looks.isEmpty ? [ComponentLook(items: [])] : looks
+    }
+
+    /// Where the drawing `look` is, or the first when there is no such drawing.
+    public func lookIndex(_ look: UUID?) -> Int {
+        look.flatMap { id in looks.firstIndex { $0.id == id } } ?? 0
+    }
+
+    /// The items of the drawing `look`, or of the first.
+    public func items(for look: UUID?) -> [LayerItem] {
+        looks[lookIndex(look)].items
+    }
+
+    /// The items of every drawing.
+    public var allItems: [LayerItem] { looks.flatMap(\.items) }
 }
 
 /// What a picture keeps besides its layers: named colours, colour sets, parts.
