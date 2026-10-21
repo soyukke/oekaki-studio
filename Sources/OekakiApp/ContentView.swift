@@ -1043,7 +1043,7 @@ private struct PercentSlider: View {
     }
 }
 
-/// How the active layer is put onto the ones below: blend mode, clipping, glow, blur.
+/// How the active layer is put onto the ones below: blend mode, clipping, glow, blur, dots.
 private struct LayerStyleControls: View {
     @ObservedObject var document: CanvasDocument
     let layer: Layer
@@ -1083,6 +1083,14 @@ private struct LayerStyleControls: View {
             }
             Slider(value: Binding(get: { Double(layer.style.blur) }, set: { document.setLayerBlur(layer.id, CGFloat($0)) }), in: 0...60)
                 .help(L("レイヤーをぼかします。遠くのものをピンぼけに見せるのに使えます", "Blurs the layer, for things far away and out of focus"))
+            HStack {
+                SectionTitle(text: L("点で塗る（トーン）", "Dots (Screen Tone)"))
+                Text(layer.style.tone > 0 ? "\(Int(layer.style.tone))px" : L("なし", "Off"))
+                    .font(.system(size: 11).monospacedDigit())
+                    .foregroundStyle(.secondary)
+            }
+            Slider(value: Binding(get: { Double(layer.style.tone) }, set: { document.setLayerTone(layer.id, CGFloat($0.rounded())) }), in: 0...24)
+                .help(L("塗りを黒い点の模様にします。濃いところほど点が大きくなります。数字は点の間隔です", "Turns the paint into black dots, bigger where it is darker. The number is how far apart the dots are"))
         }
     }
 }

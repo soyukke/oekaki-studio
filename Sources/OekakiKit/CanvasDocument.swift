@@ -512,6 +512,12 @@ public final class CanvasDocument: ObservableObject {
         restyle(id, coalescing: "blur-\(id)") { $0.blur = min(max(radius, 0), 200) }
     }
 
+    /// How far apart the dots are when the layer is turned into dots; 0 turns
+    /// the dots off. A drag on a slider is one undo step.
+    public func setLayerTone(_ id: UUID, _ spacing: CGFloat) {
+        restyle(id, coalescing: "tone-\(id)") { $0.tone = min(max(spacing, 0), 64) }
+    }
+
     private func restyle(_ id: UUID, coalescing key: String? = nil, _ change: (inout LayerStyle) -> Void) {
         guard let index = layers.firstIndex(where: { $0.id == id }) else { return }
         var style = layers[index].style

@@ -387,12 +387,18 @@ public struct LayerStyle: Equatable {
     /// How far the layer is blurred, in canvas pixels; 0 for sharp. With layers
     /// clipped to it, the blur takes them too, like things out of focus.
     public var blur: CGFloat = 0
+    /// How far apart the dots are when the layer's paint is turned into dots,
+    /// like the screen tone of comics, in canvas pixels; 0 for no dots. The
+    /// darker the paint, the bigger the dots. With layers clipped to it, they
+    /// turn into dots too.
+    public var tone: CGFloat = 0
 
-    public init(blend: BlendMode = .normal, isClipped: Bool = false, glow: CGFloat = 0, blur: CGFloat = 0) {
+    public init(blend: BlendMode = .normal, isClipped: Bool = false, glow: CGFloat = 0, blur: CGFloat = 0, tone: CGFloat = 0) {
         self.blend = blend
         self.isClipped = isClipped
         self.glow = glow
         self.blur = blur
+        self.tone = tone
     }
 }
 

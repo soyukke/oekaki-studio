@@ -15,7 +15,8 @@ public enum DocumentFile {
     /// strokes, and gradients.
     /// 5 adds named colours, colour sets, parts and their uses, and versions.
     /// 6 adds blur on layers.
-    static let currentVersion = 6
+    /// 7 adds dots (screen tone) on layers.
+    static let currentVersion = 7
 
     public enum Failure: LocalizedError {
         case notADocument
@@ -134,6 +135,7 @@ public enum DocumentFile {
         var clip: Bool?
         var glow: Double?
         var blur: Double?
+        var tone: Double?
         /// "same", "append" or "list".
         var change: String
         var ids: [Int]?
@@ -149,19 +151,21 @@ public enum DocumentFile {
         var clip: Bool?
         var glow: Double?
         var blur: Double?
+        var tone: Double?
         var items: [FileItem]
     }
 
     /// A layer's style as written: nothing at all for the plain style, so
     /// files without these fields read as plain layers.
-    private static func written(_ style: LayerStyle) -> (blend: String?, clip: Bool?, glow: Double?, blur: Double?) {
+    private static func written(_ style: LayerStyle) -> (blend: String?, clip: Bool?, glow: Double?, blur: Double?, tone: Double?) {
         (
             style.blend == .normal ? nil : style.blend.rawValue, style.isClipped ? true : nil,
-            style.glow > 0 ? Double(style.glow) : nil, style.blur > 0 ? Double(style.blur) : nil
+            style.glow > 0 ? Double(style.glow) : nil, style.blur > 0 ? Double(style.blur) : nil,
+            style.tone > 0 ? Double(style.tone) : nil
         )
     }
 
-    private static func style(blend: String?, clip: Bool?, glow: Double?, blur: Double?) throws -> LayerStyle {
+    private static func style(blend: String?, clip: Bool?, glow: Double?, blur: Double?, tone: Double?) throws -> LayerStyle {
         var style = LayerStyle()
         if let blend {
             guard let mode = BlendMode(rawValue: blend) else { throw Failure.damaged }
@@ -170,6 +174,7 @@ public enum DocumentFile {
         style.isClipped = clip ?? false
         style.glow = CGFloat(glow ?? 0)
         style.blur = CGFloat(blur ?? 0)
+        style.tone = CGFloat(tone ?? 0)
         return style
     }
 
@@ -294,7 +299,7 @@ public enum DocumentFile {
             let style = written(layer.style)
             return FileLayer(
                 name: layer.name, visible: layer.isVisible, opacity: layer.opacity,
-                composition: layer.isComposition ? true : nil, blend: style.blend, clip: style.clip, glow: style.glow, blur: style.blur,
+                composition: layer.isComposition ? true : nil, blend: style.blend, clip: style.clip, glow: style.glow, blur: style.blur, tone: style.tone,
                 items: try layer.items.map(encode)
             )
         }
@@ -306,7 +311,7 @@ public enum DocumentFile {
             layer.isVisible = saved.visible
             layer.opacity = saved.opacity
             layer.isComposition = saved.composition ?? false
-            layer.style = try style(blend: saved.blend, clip: saved.clip, glow: saved.glow, blur: saved.blur)
+            layer.style = try style(blend: saved.blend, clip: saved.clip, glow: saved.glow, blur: saved.blur, tone: saved.tone)
             layer.items = try saved.items.map(decode)
             return layer
         }
@@ -402,7 +407,7 @@ public enum DocumentFile {
             let style = written(layer.style)
             var saved = FileJournalLayer(
                 id: layer.id, name: layer.name, visible: layer.isVisible, opacity: layer.opacity,
-                composition: layer.isComposition ? true : nil, blend: style.blend, clip: style.clip, glow: style.glow, blur: style.blur,
+                composition: layer.isComposition ? true : nil, blend: style.blend, clip: style.clip, glow: style.glow, blur: style.blur, tone: style.tone,
                 change: "same"
             )
             switch layer.items {
@@ -448,7 +453,7 @@ public enum DocumentFile {
             return JournalLayer(
                 id: layer.id, name: layer.name, isVisible: layer.visible, opacity: layer.opacity,
                 isComposition: layer.composition ?? false, items: change,
-                style: try style(blend: layer.blend, clip: layer.clip, glow: layer.glow, blur: layer.blur)
+                style: try style(blend: layer.blend, clip: layer.clip, glow: layer.glow, blur: layer.blur, tone: layer.tone)
             )
         }
         step.figureChanged = saved.figureChanged ?? false

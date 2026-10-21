@@ -351,7 +351,7 @@ struct SheetPicture {
     var revision: Int
 }
 
-/// Puts layers together with their blend modes, clipping, glow and blur.
+/// Puts layers together with their blend modes, clipping, glow, blur and dots.
 final class Compositor {
     let width: Int
     let height: Int
@@ -361,6 +361,8 @@ final class Compositor {
     private var glows: [UUID: (revision: Int, radius: CGFloat, image: CGImage)] = [:]
     /// Each blurred layer's picture, kept the same way.
     private var blurs: [UUID: (revision: Int, radius: CGFloat, image: CGImage)] = [:]
+    /// Each layer turned into dots, kept the same way.
+    private var tones: [UUID: (revision: Int, spacing: CGFloat, image: CGImage)] = [:]
     private static let blur = CIContext(options: [.workingColorSpace: Raster.colorSpace, .outputColorSpace: Raster.colorSpace])
 
     init(width: Int, height: Int) {
@@ -400,6 +402,10 @@ final class Compositor {
                         top = soft
                         used.insert(layer.id)
                     }
+                    if layer.style.tone > 0, let dots = toned(layer.id, revision: Self.revision(layer.revision, blur: layer.style.blur), spacing: layer.style.tone, image: top) {
+                        top = dots
+                        used.insert(layer.id)
+                    }
                     masked.saveGState()
                     masked.clip(to: clip)
                     masked.clear(bounds)
@@ -429,13 +435,18 @@ final class Compositor {
                 hasher.combine(base.revision)
                 shown.forEach {
                     hasher.combine($0.revision); hasher.combine($0.opacity); hasher.combine($0.style.blend)
-                    hasher.combine($0.style.glow); hasher.combine($0.style.blur)
+                    hasher.combine($0.style.glow); hasher.combine($0.style.blur); hasher.combine($0.style.tone)
                 }
                 lit.revision = hasher.finalize()
             }
             // The base blurs with everything clipped to it, as one.
             if base.style.blur > 0, let soft = blurred(base.id, revision: lit.revision, radius: base.style.blur, image: image) {
                 image = soft
+                used.insert(base.id)
+            }
+            // And turns into dots with them, after any blur, so a soft edge gives smaller dots.
+            if base.style.tone > 0, let dots = toned(base.id, revision: Self.revision(lit.revision, blur: base.style.blur), spacing: base.style.tone, image: image) {
+                image = dots
                 used.insert(base.id)
             }
             picture.saveGState()
@@ -453,6 +464,41 @@ final class Compositor {
         }
         glows = glows.filter { used.contains($0.key) }
         blurs = blurs.filter { used.contains($0.key) }
+        tones = tones.filter { used.contains($0.key) }
+    }
+
+    /// What the dots are made from: the pixels, and how far they were blurred first.
+    private static func revision(_ revision: Int, blur: CGFloat) -> Int {
+        var hasher = Hasher()
+        hasher.combine(revision)
+        hasher.combine(blur)
+        return hasher.finalize()
+    }
+
+    /// The picture as black dots on a 45° screen, `spacing` pixels apart: the
+    /// darker the paint, the bigger the dots, and none where there is no paint.
+    private func toned(_ id: UUID, revision: Int, spacing: CGFloat, image: CGImage) -> CGImage? {
+        if let kept = tones[id], kept.revision == revision, kept.spacing == spacing {
+            return kept.image
+        }
+        let input = CIImage(cgImage: image)
+        let paper = CIImage(color: CIColor(red: 1, green: 1, blue: 1)).cropped(to: input.extent)
+        let screened = input.composited(over: paper).applyingFilter("CIDotScreen", parameters: [
+            kCIInputCenterKey: CIVector(x: 0, y: 0),
+            kCIInputAngleKey: Double.pi / 4,
+            kCIInputWidthKey: Double(spacing),
+            kCIInputSharpnessKey: 0.9,
+        ])
+        // Dark dots become black ink; the paper between them becomes clear.
+        let ink = screened.applyingFilter("CIColorInvert").applyingFilter("CIMaskToAlpha").applyingFilter("CIColorMatrix", parameters: [
+            "inputRVector": CIVector(x: 0, y: 0, z: 0, w: 0),
+            "inputGVector": CIVector(x: 0, y: 0, z: 0, w: 0),
+            "inputBVector": CIVector(x: 0, y: 0, z: 0, w: 0),
+        ])
+        let kept = ink.applyingFilter("CISourceInCompositing", parameters: [kCIInputBackgroundImageKey: input]).cropped(to: input.extent)
+        guard let output = Self.blur.createCGImage(kept, from: input.extent) else { return nil }
+        tones[id] = (revision, spacing, output)
+        return output
     }
 
     private func blurred(_ id: UUID, revision: Int, radius: CGFloat, image: CGImage) -> CGImage? {

@@ -429,6 +429,11 @@ public final class Replay {
                     ? L("「\(sheet.name)」をぼかした", "Blurred \"\(sheet.name)\"")
                     : L("「\(sheet.name)」のぼかしを外した", "Made \"\(sheet.name)\" sharp")
             }
+            if old.style.tone != sheet.style.tone {
+                return sheet.style.tone > 0
+                    ? L("「\(sheet.name)」を点で塗った", "Turned \"\(sheet.name)\" into dots")
+                    : L("「\(sheet.name)」の点を外した", "Took the dots off \"\(sheet.name)\"")
+            }
             return L("「\(sheet.name)」を光らせた", "Made \"\(sheet.name)\" glow")
         }
         if step.figureChanged { return L("ドールを動かした", "Posed the doll") }
@@ -451,7 +456,7 @@ public struct StepChange {
     public var hiddenLayers: [String] = []
     public var shownLayers: [String] = []
     public var renamedLayers: [(from: String, to: String)] = []
-    /// Layers whose blend mode, clipping, glow or blur changed, with the style after.
+    /// Layers whose blend mode, clipping, glow, blur or dots changed, with the style after.
     public var restyledLayers: [(name: String, style: LayerStyle)] = []
     /// What changed in the named colours, colour sets or parts, in words.
     public var libraryChange: String?
