@@ -150,6 +150,7 @@ extension LayerItem {
         case .fill(let fill): return fill.seed ?? CGPoint(x: fill.rect.midX, y: fill.rect.midY)
         case .gradient(let gradient): return gradient.start
         case .instance(let instance): return instance.placement.center
+        case .balloon(let balloon): return balloon.center
         case .bitmap, .group: return nil
         }
     }

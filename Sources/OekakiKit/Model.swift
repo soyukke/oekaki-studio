@@ -297,6 +297,8 @@ public enum LayerItem {
     case gradient(GradientItem)
     /// One use of a part.
     case instance(InstanceItem)
+    /// Words in a comic, with the balloon round them.
+    case balloon(BalloonItem)
 
     public var id: Int {
         switch self {
@@ -306,6 +308,7 @@ public enum LayerItem {
         case .group(let group): return group.id
         case .gradient(let gradient): return gradient.id
         case .instance(let instance): return instance.id
+        case .balloon(let balloon): return balloon.id
         }
     }
 
@@ -316,7 +319,7 @@ public enum LayerItem {
             case .stroke(let stroke): return stroke.isEraser ? nil : stroke.color
             case .fill(let fill): return fill.color
             case .gradient(let gradient): return gradient.from
-            case .bitmap, .group, .instance: return nil
+            case .bitmap, .group, .instance, .balloon: return nil
             }
         }
         set {
@@ -348,7 +351,7 @@ public enum LayerItem {
             case .bitmap(_, let alpha, _): return alpha
             case .group(let group): return group.alpha
             case .stroke(let stroke): return stroke.isPlain ? nil : stroke.opacity
-            case .fill, .gradient, .instance: return nil
+            case .fill, .gradient, .instance, .balloon: return nil
             }
         }
         set {
@@ -362,7 +365,7 @@ public enum LayerItem {
             case .stroke(var stroke) where !stroke.isPlain:
                 stroke.opacity = clamped
                 self = .stroke(stroke)
-            case .stroke, .fill, .gradient, .instance: break
+            case .stroke, .fill, .gradient, .instance, .balloon: break
             }
         }
     }
@@ -485,6 +488,8 @@ public enum Tool: String, CaseIterable, Identifiable {
     case figure
     /// Cutting a comic page into panels, like drawing a ruler across it.
     case panel
+    /// Putting words in a balloon; a drag points its tail.
+    case balloon
 
     public var id: String { rawValue }
 }

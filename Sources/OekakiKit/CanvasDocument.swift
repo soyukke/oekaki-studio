@@ -604,6 +604,9 @@ public final class CanvasDocument: ObservableObject {
             instance.id = next(instance.id)
             instance.content = instance.content.map { numbered($0, counter: &counter, fresh: fresh) }
             return .instance(instance)
+        case .balloon(var balloon):
+            balloon.id = next(balloon.id)
+            return .balloon(balloon)
         }
     }
 

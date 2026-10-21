@@ -52,6 +52,12 @@ extension LayerItem {
             if mirrored { instance.placement.flipped.toggle() }
             instance.content = instance.content.map { $0.transformed(by: t) }
             return .instance(instance)
+        case .balloon(var balloon):
+            // The words stay upright, whichever way the rest turns.
+            balloon.center = balloon.center.applying(t)
+            balloon.tail = balloon.tail?.applying(t)
+            balloon.fontSize = max(4, balloon.fontSize * scale)
+            return .balloon(balloon)
         case .bitmap(let image, let alpha, let id):
             let side = CGRect(x: 0, y: 0, width: image.width, height: image.height)
             let context = Raster.makeLayerContext(width: image.width, height: image.height)
@@ -175,7 +181,7 @@ extension LayerItem {
             let own = colors.merging(instance.overrides) { _, mine in mine }
             instance.content = instance.content.map { $0.recolored(own) }
             return .instance(instance)
-        case .bitmap:
+        case .bitmap, .balloon:
             return self
         }
     }
@@ -188,7 +194,7 @@ extension LayerItem {
         case .gradient(let gradient): return Set([gradient.fromRef, gradient.toRef].compactMap { $0 })
         case .group(let group): return group.items.reduce(into: Set<UUID>()) { $0.formUnion($1.colorRefs) }
         case .instance(let instance): return instance.content.reduce(into: Set<UUID>()) { $0.formUnion($1.colorRefs) }
-        case .bitmap: return []
+        case .bitmap, .balloon: return []
         }
     }
 

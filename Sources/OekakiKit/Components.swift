@@ -28,6 +28,7 @@ extension CanvasDocument {
             case .bitmap(let image, let alpha, _): return .bitmap(image, alpha: alpha, id: id)
             case .group(var group): group.id = id; group.items = group.items.map(next); return .group(group)
             case .instance(var instance): instance.id = id; instance.content = instance.content.map(next); return .instance(instance)
+            case .balloon(var balloon): balloon.id = id; return .balloon(balloon)
             }
         }
         return next(item)

@@ -41,6 +41,12 @@ struct SelectionInspector: View {
     private var strokes: [Stroke] {
         items.compactMap { if case .stroke(let stroke) = $0, !stroke.isEraser { return stroke } else { return nil } }
     }
+    /// The one balloon picked out, if that is the selection.
+    private var balloon: BalloonItem? {
+        guard items.count == 1, case .balloon(let balloon) = items[0] else { return nil }
+        return balloon
+    }
+
     /// The one use of a part picked out, if that is the selection.
     private var use: InstanceItem? {
         guard items.count == 1, case .instance(let use) = items[0] else { return nil }
@@ -57,6 +63,8 @@ struct SelectionInspector: View {
             header
             if let use, let part = document.library.component(use.component) {
                 placement(use, part)
+            } else if let balloon {
+                words(balloon)
             } else {
                 common
             }
@@ -294,6 +302,52 @@ struct SelectionInspector: View {
 }
 
 extension SelectionInspector {
+    /// Changes the one balloon picked out.
+    fileprivate func change(_ key: String? = nil, _ body: @escaping (inout BalloonItem) -> Void) {
+        document.updateItems(tools.selection, coalescing: key) { item in
+            guard case .balloon(var balloon) = item else { return }
+            body(&balloon)
+            item = .balloon(balloon)
+        }
+    }
+
+    /// A balloon's words, its shape and its size.
+    @ViewBuilder fileprivate func words(_ balloon: BalloonItem) -> some View {
+        SectionTitle(text: L("言葉", "Words"))
+        TextEditor(text: Binding(get: { balloon.text }, set: { text in change("balloon-text-\(balloon.id)") { $0.text = text } }))
+            .font(.system(size: 13))
+            .frame(height: 64)
+            .overlay(RoundedRectangle(cornerRadius: 4).strokeBorder(.secondary.opacity(0.4)))
+        Text(balloon.vertical
+            ? L("改行すると、左の列に移ります", "A new line starts the next column, to the left")
+            : L("改行すると、次の行に移ります", "A new line starts the next line"))
+            .font(.system(size: 10)).foregroundStyle(.secondary)
+        Picker(L("形", "Shape"), selection: Binding(get: { balloon.shape }, set: { shape in change { $0.shape = shape } })) {
+            ForEach(BalloonItem.Shape.allCases) { shape in
+                Text(shape.title).tag(shape)
+            }
+        }
+        .font(.system(size: 11))
+        GuideSlider(
+            title: L("文字の大きさ", "Letter Size"), text: "\(Int(balloon.fontSize.rounded()))px",
+            value: Binding(get: { Double(balloon.fontSize) }, set: { size in change("balloon-size-\(balloon.id)") { $0.fontSize = CGFloat(size.rounded()) } }),
+            range: 8...200
+        )
+        HStack(spacing: 8) {
+            Toggle(L("縦書き", "Vertical"), isOn: Binding(get: { balloon.vertical }, set: { vertical in change { $0.vertical = vertical } }))
+                .toggleStyle(.checkbox)
+                .font(.system(size: 11))
+            Spacer()
+            if balloon.tail != nil {
+                Button(L("しっぽを消す", "Remove Tail")) { change { $0.tail = nil } }
+                    .controlSize(.small)
+            }
+        }
+        Text(L("しっぽは、ふきだしの道具で吹き出しからドラッグすると向きを変えられます", "To point the tail, drag from the balloon with the Balloon tool"))
+            .font(.system(size: 10)).foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
     /// The part's drawings: which one this copy shows, and making another
     /// from a copy of it, like the sheets of a character drawn many ways.
     @ViewBuilder fileprivate func looks(_ use: InstanceItem, _ part: Component) -> some View {

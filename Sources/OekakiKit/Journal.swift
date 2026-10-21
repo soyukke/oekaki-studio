@@ -531,6 +531,9 @@ extension LayerItem {
         case .group(let group): return "\(group.name) #\(id)"
         case .gradient: return L("グラデーション #\(id)", "Gradient #\(id)")
         case .instance: return L("部品 #\(id)", "Part #\(id)")
+        case .balloon(let balloon):
+            let words = balloon.text.replacingOccurrences(of: "\n", with: "")
+            return L("吹き出し「\(words.prefix(12))」", "Balloon \"\(words.prefix(12))\"")
         }
     }
 }

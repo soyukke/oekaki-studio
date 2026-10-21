@@ -67,6 +67,9 @@ final class CanvasNSView: NSView {
     private var shapeDrag: [CGPoint]?
     /// The ruler line being drawn to cut a panel.
     private var panelDrag: (start: CGPoint, end: CGPoint)?
+    /// A balloon being put down, or one whose tail is being pointed: where
+    /// the drag began and is now, and the balloon if it was already there.
+    private var balloonDrag: (start: CGPoint, end: CGPoint, balloon: Int?)?
     /// The selection being dragged along: where the pointer was, the part of
     /// a pixel not moved yet, and the undo key of the drag.
     private var moving: (last: CGPoint, carry: CGVector, key: String)?
@@ -199,10 +202,23 @@ final class CanvasNSView: NSView {
 
     // MARK: Panels
 
-    /// With the panel tool, each panel's place in reading order, and the cut being drawn.
+    /// With the panel tool, each panel's place in reading order, and the cut
+    /// being drawn; with the balloon tool, the tail being pointed.
     private func drawPanelGuide(in context: CGContext) {
-        guard tools.tool == .panel else { return }
         let accent = NSColor.controlAccentColor
+        guard tools.tool == .panel else {
+            if let balloonDrag {
+                // The tail to be: from where the drag began to the pointer.
+                context.setStrokeColor(accent.cgColor)
+                context.setLineWidth(2 * screenPixel)
+                context.setLineDash(phase: 0, lengths: [6 * screenPixel, 4 * screenPixel])
+                context.move(to: balloonDrag.start)
+                context.addLine(to: balloonDrag.end)
+                context.strokePath()
+                context.setLineDash(phase: 0, lengths: [])
+            }
+            return
+        }
         let size = 14 * screenPixel
         for (index, panel) in document.panels.enumerated() {
             let center = CGPoint(x: panel.maxX - size * 1.4, y: panel.minY + size * 1.4)
@@ -636,6 +652,13 @@ final class CanvasNSView: NSView {
             compositionMouseDown(at: point, event: event)
         case .panel:
             panelDrag = (point, point)
+        case .balloon:
+            let under = document.trace(point, slack: 4 * screenPixel)?.path.last
+            if let under, case .balloon? = document.item(under)?.item {
+                balloonDrag = (point, point, under)
+            } else {
+                balloonDrag = (point, point, nil)
+            }
         }
     }
 
@@ -650,6 +673,11 @@ final class CanvasNSView: NSView {
         }
         if let drag = panelDrag {
             panelDrag = (drag.start, point)
+            needsDisplay = true
+            return
+        }
+        if let drag = balloonDrag {
+            balloonDrag = (drag.start, point, drag.balloon)
             needsDisplay = true
             return
         }
@@ -712,6 +740,31 @@ final class CanvasNSView: NSView {
             if document.fillShape(outline, color: tools.color) {
                 tools.noteColorUsed()
             } else if outline.count > 2 {
+                explainWhyNothingHappened()
+            }
+            return
+        }
+        if let drag = balloonDrag {
+            balloonDrag = nil
+            needsDisplay = true
+            let dragged = hypot(point.x - drag.start.x, point.y - drag.start.y) > 12 * screenPixel
+            if let id = drag.balloon {
+                tools.selection = [id]
+                guard dragged else { return }
+                document.updateItems([id]) { item in
+                    guard case .balloon(var balloon) = item else { return }
+                    balloon.tail = point
+                    item = .balloon(balloon)
+                }
+                return
+            }
+            let balloon = BalloonItem(
+                text: L("セリフ", "Words"), center: drag.start, fontSize: BalloonItem.fontSize(forCanvasWidth: document.width),
+                tail: dragged ? point : nil, vertical: Localization.isJapanese
+            )
+            if let id = document.addBalloon(balloon) {
+                tools.selection = [id]
+            } else {
                 explainWhyNothingHappened()
             }
             return

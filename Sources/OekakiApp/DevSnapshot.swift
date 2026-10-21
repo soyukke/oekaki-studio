@@ -18,7 +18,7 @@ import OekakiKit
 /// `OEKAKI_DEMO=multi`, `colors`, `parts`, `versions` and `compare` show
 /// picking many items, named colours and colour sets, parts, and versions;
 /// `parts-looks` gives a part a second drawing, and `panels` cuts the page
-/// into comic panels and draws across them.
+/// into comic panels and draws across them; `balloons` adds words to it.
 /// `OEKAKI_DEMO=file` opens the document at `OEKAKI_FILE`, with the layer
 /// named `OEKAKI_LAYER` chosen if given. `OEKAKI_DEMO=shape` draws round an
 /// area with the lasso fill; `shape-done` lets go, so the area is filled.
@@ -76,6 +76,8 @@ enum DevSnapshot {
                 drivePartsGrow(session: session, apply: ProcessInfo.processInfo.environment["OEKAKI_DEMO"] == "parts-grow-done")
             case "panels":
                 drivePanels(session: session)
+            case "balloons":
+                driveBalloons(session: session)
             case "parts-looks":
                 drawSample(on: session.document)
                 drivePartsLooks(session: session)
@@ -383,6 +385,24 @@ enum DevSnapshot {
         line(balloon, width: 5)
         session.tools.tool = .panel
         print("panels: \(document.panels.count) panels")
+    }
+
+    /// The page of panels with a balloon of each shape, the first picked.
+    private static func driveBalloons(session: Session) {
+        drivePanels(session: session)
+        let document = session.document
+        let w = CGFloat(document.width), h = CGFloat(document.height)
+        let size = BalloonItem.fontSize(forCanvasWidth: document.width)
+        let shown: [BalloonItem] = [
+            BalloonItem(text: L("ここは\nどこだ？", "Where\nare we?"), center: CGPoint(x: w * 0.8, y: h * 0.25), fontSize: size, tail: CGPoint(x: w * 0.7, y: h * 0.38)),
+            BalloonItem(text: L("待て！", "Wait!"), center: CGPoint(x: w * 0.25, y: h * 0.62), fontSize: size * 1.3, shape: .shout, tail: CGPoint(x: w * 0.15, y: h * 0.8)),
+            BalloonItem(text: L("もしかして…", "Could it be…"), center: CGPoint(x: w * 0.72, y: h * 0.62), fontSize: size, shape: .thought, tail: CGPoint(x: w * 0.85, y: h * 0.85)),
+            BalloonItem(text: L("その日、\n町は静かだった。", "That day,\nthe town was quiet."), center: CGPoint(x: w * 0.3, y: h * 0.2), fontSize: size * 0.8, shape: .narration),
+        ]
+        let ids = shown.compactMap { document.addBalloon($0) }
+        session.tools.tool = .balloon
+        session.tools.selection = ids.prefix(1).map { $0 }
+        print("balloons: \(ids.count) balloons")
     }
 
     /// The sparkle given a second drawing, turned into an X, shown on the

@@ -18,7 +18,8 @@ public enum DocumentFile {
     /// 7 adds dots (screen tone) on layers.
     /// 8 adds parts with several drawings (variations).
     /// 9 adds comic pages divided into panels, and layers laid over the frames.
-    static let currentVersion = 9
+    /// 10 adds speech balloons.
+    static let currentVersion = 10
 
     public enum Failure: LocalizedError {
         case notADocument
@@ -212,8 +213,21 @@ public enum DocumentFile {
         var items: [FileItem]?
         var gradient: FileGradient?
         var instance: FileInstance?
+        var balloon: FileBalloon?
         /// The named colour a stroke or fill takes its colour from.
         var ref: UUID?
+    }
+
+    private struct FileBalloon: Codable {
+        var text: String
+        /// The middle, x then y.
+        var center: [Double]
+        var size: Double
+        var shape: String
+        /// Where the tail points, x then y.
+        var tail: [Double]?
+        /// False when written across.
+        var vertical: Bool?
     }
 
     private struct FileGradient: Codable {
@@ -260,6 +274,9 @@ public enum DocumentFile {
                 return x.id == y.id && x.full === y.full && x.color == y.color && x.rect == y.rect && x.colorRef == y.colorRef
             case (.bitmap(let x, let xa, let xid), .bitmap(let y, let ya, let yid)):
                 return xid == yid && x === y && xa == ya
+            case (.balloon(let x), .balloon(let y)):
+                return x.id == y.id && x.text == y.text && x.center == y.center && x.fontSize == y.fontSize && x.shape == y.shape
+                    && x.tail == y.tail && x.vertical == y.vertical
             case (.group(let x), .group(let y)):
                 return x.id == y.id && x.name == y.name && x.alpha == y.alpha && x.items.count == y.items.count
                     && zip(x.items, y.items).allSatisfy { same($0, $1) }
@@ -550,6 +567,12 @@ public enum DocumentFile {
             return FileItem(kind: "fill", id: fill.id, rect: rect, full: full, interior: interior, color: fill.color, seed: seed, ref: fill.colorRef)
         case .group(let group):
             return FileItem(kind: "group", id: group.id, alpha: Double(group.alpha), name: group.name, items: try group.items.map(encode))
+        case .balloon(let balloon):
+            let saved = FileBalloon(
+                text: balloon.text, center: [Double(balloon.center.x), Double(balloon.center.y)], size: Double(balloon.fontSize),
+                shape: balloon.shape.rawValue, tail: balloon.tail.map { [Double($0.x), Double($0.y)] }, vertical: balloon.vertical ? nil : false
+            )
+            return FileItem(kind: "balloon", id: balloon.id, balloon: saved)
         }
     }
 
@@ -597,6 +620,13 @@ public enum DocumentFile {
             let area = CGRect(x: rect[0], y: rect[1], width: rect[2], height: rect[3])
             let seed = item.seed.flatMap { $0.count == 2 ? CGPoint(x: $0[0], y: $0[1]) : nil }
             return .fill(FillItem(id: item.id ?? 0, rect: area, full: full, interior: interior, color: color, seed: seed, colorRef: item.ref))
+        case "balloon":
+            guard let saved = item.balloon, saved.center.count == 2, let shape = BalloonItem.Shape(rawValue: saved.shape) else { throw Failure.damaged }
+            let tail = saved.tail.flatMap { $0.count == 2 ? CGPoint(x: $0[0], y: $0[1]) : nil }
+            return .balloon(BalloonItem(
+                id: item.id ?? 0, text: saved.text, center: CGPoint(x: saved.center[0], y: saved.center[1]), fontSize: CGFloat(saved.size),
+                shape: shape, tail: tail, vertical: saved.vertical ?? true
+            ))
         case "group":
             guard let items = item.items else { throw Failure.damaged }
             return .group(GroupItem(id: item.id ?? 0, name: item.name ?? "", items: try items.map(decode), alpha: CGFloat(item.alpha ?? 1)))

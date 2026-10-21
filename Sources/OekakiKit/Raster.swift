@@ -85,6 +85,8 @@ enum Raster {
             instance.content.forEach { draw($0, in: sheet) }
             guard let image = sheet.makeImage() else { return }
             draw(.bitmap(image, alpha: 1), in: context)
+        case .balloon(let balloon):
+            BalloonRenderer.draw(balloon, in: context)
         case .fill(let fill):
             upright(fill.rect, in: context) {
                 context.setFillColor(fill.color.cgColor)

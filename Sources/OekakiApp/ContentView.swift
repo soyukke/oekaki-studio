@@ -211,6 +211,7 @@ private extension Tool {
         case .eyedropper: return L("色をひろう", "Pick Color")
         case .figure: return L("構図", "Composition")
         case .panel: return L("コマ割り", "Panels")
+        case .balloon: return L("ふきだし", "Balloon")
         }
     }
 
@@ -226,6 +227,7 @@ private extension Tool {
         case .eyedropper: return "eyedropper"
         case .figure: return "figure.arms.open"
         case .panel: return "rectangle.split.2x2"
+        case .balloon: return "bubble.left"
         }
     }
 
@@ -280,6 +282,11 @@ private extension Tool {
             return L(
                 "ページの上に、コマの端から端まで線を引くと、そこでコマが切れます。コマの中で描き始めたものは、そのコマからはみ出しません。コマの間から描き始めると、コマをまたいで描けます。",
                 "Draw a line from one side of a panel to the other to cut it there. Whatever you begin inside a panel stays inside it; begin between panels to draw across them."
+            )
+        case .balloon:
+            return L(
+                "押したところに吹き出しを置きます。そのままドラッグすると、離したところにしっぽが向きます。置いた吹き出しからドラッグすると、しっぽの向きを変えられます。言葉は右の欄で書きます。",
+                "Click to put a balloon there; drag, and its tail points where you let go. Drag from a balloon to point its tail again. Write the words in the panel on the right."
             )
         }
     }
@@ -1021,6 +1028,7 @@ extension LayerItem {
         case .group: return "square.stack.3d.up"
         case .gradient: return "circle.lefthalf.filled"
         case .instance: return "square.on.square.dashed"
+        case .balloon: return "bubble.left"
         }
     }
 
@@ -1045,6 +1053,8 @@ extension LayerItem {
                 : L("まるいグラデーション", "A radial gradient")
         case .instance(let use):
             return L("部品を \(Int((use.placement.scale * 100).rounded()))% で置いたもの", "A part placed at \(Int((use.placement.scale * 100).rounded()))%")
+        case .balloon(let balloon):
+            return L("\(balloon.shape.title)の吹き出し、\(balloon.vertical ? "縦書き" : "横書き")", "A \(balloon.shape.title.lowercased()) balloon, written \(balloon.vertical ? "down" : "across")")
         }
     }
 }

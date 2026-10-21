@@ -22,6 +22,8 @@ extension LayerItem {
             return group.items.reduce(CGRect.null) { $0.union($1.bounds(canvas: canvas)) }
         case .instance(let instance):
             return instance.content.reduce(CGRect.null) { $0.union($1.bounds(canvas: canvas)) }
+        case .balloon(let balloon):
+            return BalloonRenderer.bounds(balloon)
         }
     }
 
@@ -50,6 +52,8 @@ extension LayerItem {
             return canvas.contains(point) && gradient.alpha(at: point) > 0.02
         case .instance(let instance):
             return instance.content.contains { $0.paints(point, canvas: canvas, slack: slack) }
+        case .balloon(let balloon):
+            return BalloonRenderer.bounds(balloon).insetBy(dx: -slack, dy: -slack).contains(point)
         }
     }
 
