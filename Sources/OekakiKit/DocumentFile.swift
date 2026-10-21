@@ -17,7 +17,8 @@ public enum DocumentFile {
     /// 6 adds blur on layers.
     /// 7 adds dots (screen tone) on layers.
     /// 8 adds parts with several drawings (variations).
-    static let currentVersion = 8
+    /// 9 adds comic pages divided into panels, and layers laid over the frames.
+    static let currentVersion = 9
 
     public enum Failure: LocalizedError {
         case notADocument
@@ -86,6 +87,7 @@ public enum DocumentFile {
         var themes: [FileTheme]
         var components: [FileComponent]
         var currentTheme: UUID?
+        var page: PanelLayout?
     }
 
     private struct FileSwatch: Codable {
@@ -149,6 +151,7 @@ public enum DocumentFile {
         var glow: Double?
         var blur: Double?
         var tone: Double?
+        var over: Bool?
         /// "same", "append" or "list".
         var change: String
         var ids: [Int]?
@@ -165,20 +168,21 @@ public enum DocumentFile {
         var glow: Double?
         var blur: Double?
         var tone: Double?
+        var over: Bool?
         var items: [FileItem]
     }
 
     /// A layer's style as written: nothing at all for the plain style, so
     /// files without these fields read as plain layers.
-    private static func written(_ style: LayerStyle) -> (blend: String?, clip: Bool?, glow: Double?, blur: Double?, tone: Double?) {
+    private static func written(_ style: LayerStyle) -> (blend: String?, clip: Bool?, glow: Double?, blur: Double?, tone: Double?, over: Bool?) {
         (
             style.blend == .normal ? nil : style.blend.rawValue, style.isClipped ? true : nil,
             style.glow > 0 ? Double(style.glow) : nil, style.blur > 0 ? Double(style.blur) : nil,
-            style.tone > 0 ? Double(style.tone) : nil
+            style.tone > 0 ? Double(style.tone) : nil, style.overPanels ? true : nil
         )
     }
 
-    private static func style(blend: String?, clip: Bool?, glow: Double?, blur: Double?, tone: Double?) throws -> LayerStyle {
+    private static func style(blend: String?, clip: Bool?, glow: Double?, blur: Double?, tone: Double?, over: Bool?) throws -> LayerStyle {
         var style = LayerStyle()
         if let blend {
             guard let mode = BlendMode(rawValue: blend) else { throw Failure.damaged }
@@ -188,6 +192,7 @@ public enum DocumentFile {
         style.glow = CGFloat(glow ?? 0)
         style.blur = CGFloat(blur ?? 0)
         style.tone = CGFloat(tone ?? 0)
+        style.overPanels = over ?? false
         return style
     }
 
@@ -312,7 +317,7 @@ public enum DocumentFile {
             let style = written(layer.style)
             return FileLayer(
                 name: layer.name, visible: layer.isVisible, opacity: layer.opacity,
-                composition: layer.isComposition ? true : nil, blend: style.blend, clip: style.clip, glow: style.glow, blur: style.blur, tone: style.tone,
+                composition: layer.isComposition ? true : nil, blend: style.blend, clip: style.clip, glow: style.glow, blur: style.blur, tone: style.tone, over: style.over,
                 items: try layer.items.map(encode)
             )
         }
@@ -324,7 +329,7 @@ public enum DocumentFile {
             layer.isVisible = saved.visible
             layer.opacity = saved.opacity
             layer.isComposition = saved.composition ?? false
-            layer.style = try style(blend: saved.blend, clip: saved.clip, glow: saved.glow, blur: saved.blur, tone: saved.tone)
+            layer.style = try style(blend: saved.blend, clip: saved.clip, glow: saved.glow, blur: saved.blur, tone: saved.tone, over: saved.over)
             layer.items = try saved.items.map(decode)
             return layer
         }
@@ -339,7 +344,8 @@ public enum DocumentFile {
                 FileTheme(id: theme.id, name: theme.name, colors: Dictionary(uniqueKeysWithValues: theme.colors.map { ($0.key.uuidString, $0.value) }))
             },
             components: try library.components.map(encode),
-            currentTheme: library.currentTheme
+            currentTheme: library.currentTheme,
+            page: library.page
         )
     }
 
@@ -354,6 +360,7 @@ public enum DocumentFile {
         }
         library.components = try saved.components.map(decode)
         library.currentTheme = saved.currentTheme
+        library.page = saved.page
         return library
     }
 
@@ -440,7 +447,7 @@ public enum DocumentFile {
             let style = written(layer.style)
             var saved = FileJournalLayer(
                 id: layer.id, name: layer.name, visible: layer.isVisible, opacity: layer.opacity,
-                composition: layer.isComposition ? true : nil, blend: style.blend, clip: style.clip, glow: style.glow, blur: style.blur, tone: style.tone,
+                composition: layer.isComposition ? true : nil, blend: style.blend, clip: style.clip, glow: style.glow, blur: style.blur, tone: style.tone, over: style.over,
                 change: "same"
             )
             switch layer.items {
@@ -486,7 +493,7 @@ public enum DocumentFile {
             return JournalLayer(
                 id: layer.id, name: layer.name, isVisible: layer.visible, opacity: layer.opacity,
                 isComposition: layer.composition ?? false, items: change,
-                style: try style(blend: layer.blend, clip: layer.clip, glow: layer.glow, blur: layer.blur, tone: layer.tone)
+                style: try style(blend: layer.blend, clip: layer.clip, glow: layer.glow, blur: layer.blur, tone: layer.tone, over: layer.over)
             )
         }
         step.figureChanged = saved.figureChanged ?? false

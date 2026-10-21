@@ -214,12 +214,15 @@ extension CanvasDocument {
             pictureContext.setFillColor(background.cgColor)
             pictureContext.fill(bounds)
         }
+        let page = state.snapshot.library.page
         let sheets = state.snapshot.layers.filter { !$0.isComposition }.map { layer -> SheetPicture in
             let sheet = Raster.makeLayerContext(width: width, height: height)
-            layer.items.forEach { Raster.draw($0, in: sheet) }
+            let clips = page?.clips(for: layer.style, in: bounds) ?? []
+            layer.items.forEach { Raster.draw($0, in: sheet, panels: clips) }
             return SheetPicture(id: layer.id, image: sheet.makeImage(), isVisible: layer.isVisible, opacity: layer.opacity, style: layer.style, revision: 0)
         }
-        Compositor(width: width, height: height).flatten(sheets, onto: pictureContext)
+        let frames = page?.frameSheet(width: width, height: height, revision: 0)
+        Compositor(width: width, height: height).flatten(sheets.withFrames(frames), onto: pictureContext)
         return pictureContext.makeImage()
     }
 

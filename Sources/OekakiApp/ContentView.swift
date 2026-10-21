@@ -210,6 +210,7 @@ private extension Tool {
         case .gradient: return L("グラデ", "Gradient")
         case .eyedropper: return L("色をひろう", "Pick Color")
         case .figure: return L("構図", "Composition")
+        case .panel: return L("コマ割り", "Panels")
         }
     }
 
@@ -224,6 +225,7 @@ private extension Tool {
         case .gradient: return "circle.lefthalf.filled"
         case .eyedropper: return "eyedropper"
         case .figure: return "figure.arms.open"
+        case .panel: return "rectangle.split.2x2"
         }
     }
 
@@ -273,6 +275,11 @@ private extension Tool {
             return L(
                 "人形・線・メモで絵の計画を立てます。ブラシでなぞって自分で描くことも、依頼用の画像にすることもできます。",
                 "Plan the picture with the doll, lines and notes. Trace over it with the brush, or export it to commission an illustrator."
+            )
+        case .panel:
+            return L(
+                "ページの上に、コマの端から端まで線を引くと、そこでコマが切れます。コマの中で描き始めたものは、そのコマからはみ出しません。コマの間から描き始めると、コマをまたいで描けます。",
+                "Draw a line from one side of a panel to the other to cut it there. Whatever you begin inside a panel stays inside it; begin between panels to draw across them."
             )
         }
     }
@@ -340,6 +347,8 @@ private struct ToolRail: View {
 
                 if tools.tool == .figure {
                     CompositionControls(tools: tools, document: document, exportBrief: exportBrief)
+                } else if tools.tool == .panel {
+                    PanelControls(document: document)
                 } else if tools.tool == .airbrush {
                     SizeControl(title: L("大きさ", "Size"), value: $tools.airbrushSize, range: 10...400, color: tools.color.color)
                     PercentSlider(title: L("濃さ", "Opacity"), value: $tools.airbrushOpacity)
@@ -416,6 +425,53 @@ private struct ToolRail: View {
 }
 
 // MARK: - Composition
+
+/// The panel tool's settings: how thick the frames are and how far apart.
+private struct PanelControls: View {
+    @ObservedObject var document: CanvasDocument
+
+    var body: some View {
+        VStack(spacing: 8) {
+            SectionTitle(text: L("コマ割り", "Panels"))
+            if let page = document.library.page {
+                Text(L("いま \(page.root.count) コマ。数字は読む順です", "\(page.root.count) panels; the numbers are the reading order"))
+                    .font(.system(size: 10))
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .fixedSize(horizontal: false, vertical: true)
+                slider(L("枠の太さ", "Frame"), \.line, 1...16, page)
+                slider(L("上下のコマの間", "Gap Above and Below"), \.gapAcross, 0...120, page)
+                slider(L("左右のコマの間", "Gap Side by Side"), \.gapDown, 0...120, page)
+                slider(L("ページの余白", "Page Margin"), \.margin, 0...240, page)
+                Button(role: .destructive) { document.setPage(nil) } label: {
+                    Label(L("コマ割りをやめる", "Stop Dividing the Page"), systemImage: "rectangle")
+                        .frame(maxWidth: .infinity)
+                }
+                .controlSize(.small)
+                .help(L("枠を消して、ふつうの 1 枚の絵に戻します。描いたものは消えません", "Takes the frames away and makes it one picture again; nothing you drew is lost"))
+            } else {
+                Text(L("まだコマはありません。ページに横か縦に線を引くと、最初のコマ割りができます", "No panels yet. Draw a line across the page to make the first cut"))
+                    .font(.system(size: 10))
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    /// A slider for one size of the layout, one undo step per drag.
+    private func slider(_ title: String, _ path: WritableKeyPath<PanelLayout, Double>, _ range: ClosedRange<Double>, _ page: PanelLayout) -> some View {
+        GuideSlider(
+            title: title, text: "\(Int(page[keyPath: path].rounded()))px",
+            value: Binding(get: { page[keyPath: path] }, set: { value in
+                var changed = page
+                changed[keyPath: path] = value.rounded()
+                document.setPage(changed, coalescing: "page-\(title)")
+            }),
+            range: range
+        )
+    }
+}
 
 /// The composition tool: what it does on the canvas, its settings, and the
 /// way out to an image for a commission.
@@ -1068,6 +1124,15 @@ private struct LayerStyleControls: View {
             .toggleStyle(.checkbox)
             .frame(maxWidth: .infinity, alignment: .leading)
             .help(L("下のレイヤーに塗ってあるところにだけ表示します", "Shows only where the layer below has paint"))
+            if document.library.page != nil {
+                Toggle(isOn: Binding(get: { layer.style.overPanels }, set: { document.setLayerOverPanels(layer.id, $0) })) {
+                    Text(L("コマの上に重ねる", "Over the Panels"))
+                        .font(.system(size: 11))
+                }
+                .toggleStyle(.checkbox)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .help(L("コマの枠より上に出し、コマをまたいで描けるようにします。吹き出しや効果音に使います", "Lays the layer over the frames and lets it run across panels, for speech balloons and sound effects"))
+            }
             HStack {
                 SectionTitle(text: L("光のにじみ", "Glow"))
                 Text(layer.style.glow > 0 ? "\(Int(layer.style.glow))px" : L("なし", "Off"))

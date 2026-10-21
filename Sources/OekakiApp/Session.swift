@@ -140,7 +140,7 @@ final class ToolState: ObservableObject {
         case .airbrush: return airbrushSize
         case .eraser: return eraserSize
         case .figure: return planMode == .eraser ? eraserSize : nil
-        case .fill, .shape, .eyedropper, .select, .gradient: return nil
+        case .fill, .shape, .eyedropper, .select, .gradient, .panel: return nil
         }
     }
 

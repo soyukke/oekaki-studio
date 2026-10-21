@@ -160,6 +160,11 @@ public final class Replay {
     /// Counts each sheet's redraws, so a glow is made again only when needed.
     private var revisions: [UUID: Int] = [:]
     private lazy var compositor = Compositor(width: width, height: height)
+    /// The way the page was divided when the sheets were last drawn.
+    private var drawnPage: PanelLayout?
+    /// Whether each sheet lay over the frames when it was last drawn.
+    private var drawnOver: [UUID: Bool] = [:]
+    private var framesRevision = 0
 
     public init(steps: [JournalStep], width: Int, height: Int) {
         self.steps = steps
@@ -183,6 +188,8 @@ public final class Replay {
         if target < position {
             state = State()
             pixels = [:]
+            drawnPage = nil
+            drawnOver = [:]
             position = -1
         }
         while position < target {
@@ -236,7 +243,8 @@ public final class Replay {
             )
         }
         let layers = Raster.makeContext(width: width, height: height)
-        compositor.flatten(sheets, onto: layers)
+        let frames = state.library.page?.frameSheet(width: width, height: height, revision: framesRevision)
+        compositor.flatten(sheets.withFrames(frames), onto: layers)
         if let together = layers.makeImage() {
             Raster.upright(bounds, in: picture) { picture.draw(together, in: bounds) }
         }
@@ -263,25 +271,39 @@ public final class Replay {
     }
 
     private func draw(_ redraws: [UUID: Redraw]) {
+        var redraws = redraws
+        // Another way of dividing the page may keep every item to another panel.
+        if state.library.page != drawnPage {
+            drawnPage = state.library.page
+            framesRevision += 1
+            state.sheets.forEach { redraws[$0.id] = .all }
+        }
+        // So may laying a sheet over the frames, or taking it back.
+        for sheet in state.sheets where drawnOver[sheet.id] != sheet.style.overPanels {
+            if drawnOver[sheet.id] != nil { redraws[sheet.id] = .all }
+            drawnOver[sheet.id] = sheet.style.overPanels
+        }
+        let bounds = CGRect(x: 0, y: 0, width: width, height: height)
         let ids = Set(state.sheets.map(\.id))
         pixels = pixels.filter { ids.contains($0.key) }
         for sheet in state.sheets {
             if pixels[sheet.id] == nil || redraws[sheet.id] != nil {
                 revisions[sheet.id, default: 0] += 1
             }
+            let clips = state.library.page?.clips(for: sheet.style, in: bounds) ?? []
             if let context = pixels[sheet.id] {
                 switch redraws[sheet.id] {
                 case nil:
                     continue
                 case .add(let items):
-                    items.forEach { Raster.draw($0, in: context) }
+                    items.forEach { Raster.draw($0, in: context, panels: clips) }
                 case .all:
                     Raster.clear(context)
-                    sheet.items.forEach { Raster.draw($0, in: context) }
+                    sheet.items.forEach { Raster.draw($0, in: context, panels: clips) }
                 }
             } else {
                 let context = Raster.makeLayerContext(width: width, height: height)
-                sheet.items.forEach { Raster.draw($0, in: context) }
+                sheet.items.forEach { Raster.draw($0, in: context, panels: clips) }
                 pixels[sheet.id] = context
             }
         }
@@ -428,6 +450,11 @@ public final class Replay {
                 return sheet.style.blur > 0
                     ? L("「\(sheet.name)」をぼかした", "Blurred \"\(sheet.name)\"")
                     : L("「\(sheet.name)」のぼかしを外した", "Made \"\(sheet.name)\" sharp")
+            }
+            if old.style.overPanels != sheet.style.overPanels {
+                return sheet.style.overPanels
+                    ? L("「\(sheet.name)」をコマの上に重ねた", "Laid \"\(sheet.name)\" over the panels")
+                    : L("「\(sheet.name)」をコマの中に戻した", "Put \"\(sheet.name)\" back inside the panels")
             }
             if old.style.tone != sheet.style.tone {
                 return sheet.style.tone > 0

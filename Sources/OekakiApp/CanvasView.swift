@@ -65,6 +65,8 @@ final class CanvasNSView: NSView {
     private var gradientDrag: (start: CGPoint, end: CGPoint)?
     /// The outline being drawn round an area with the lasso fill.
     private var shapeDrag: [CGPoint]?
+    /// The ruler line being drawn to cut a panel.
+    private var panelDrag: (start: CGPoint, end: CGPoint)?
     /// The selection being dragged along: where the pointer was, the part of
     /// a pixel not moved yet, and the undo key of the drag.
     private var moving: (last: CGPoint, carry: CGVector, key: String)?
@@ -179,6 +181,7 @@ final class CanvasNSView: NSView {
             let radius = 4 * screenPixel
             context.strokeEllipse(in: CGRect(x: first.x - radius, y: first.y - radius, width: 2 * radius, height: 2 * radius))
         }
+        drawPanelGuide(in: context)
         NoteRenderer.draw(document.notes, in: context, skipping: draft?.note.id)
         if let arrow {
             context.setStrokeColor(NoteRenderer.ink)
@@ -192,6 +195,33 @@ final class CanvasNSView: NSView {
         drawSelection(in: context)
         drawSizeRing(in: context)
         drawFigureHandles(in: context)
+    }
+
+    // MARK: Panels
+
+    /// With the panel tool, each panel's place in reading order, and the cut being drawn.
+    private func drawPanelGuide(in context: CGContext) {
+        guard tools.tool == .panel else { return }
+        let accent = NSColor.controlAccentColor
+        let size = 14 * screenPixel
+        for (index, panel) in document.panels.enumerated() {
+            let center = CGPoint(x: panel.maxX - size * 1.4, y: panel.minY + size * 1.4)
+            context.setFillColor(accent.cgColor)
+            context.fillEllipse(in: CGRect(x: center.x - size, y: center.y - size, width: 2 * size, height: 2 * size))
+            let label = NSAttributedString(string: "\(index + 1)", attributes: [
+                .font: NSFont.systemFont(ofSize: size * 1.1, weight: .bold), .foregroundColor: NSColor.white,
+            ])
+            let box = label.size()
+            label.draw(at: CGPoint(x: center.x - box.width / 2, y: center.y - box.height / 2))
+        }
+        guard let panelDrag else { return }
+        context.setStrokeColor(accent.cgColor)
+        context.setLineWidth(2 * screenPixel)
+        context.setLineDash(phase: 0, lengths: [8 * screenPixel, 5 * screenPixel])
+        context.move(to: panelDrag.start)
+        context.addLine(to: panelDrag.end)
+        context.strokePath()
+        context.setLineDash(phase: 0, lengths: [])
     }
 
     // MARK: Selection
@@ -604,6 +634,8 @@ final class CanvasNSView: NSView {
             }
         case .figure:
             compositionMouseDown(at: point, event: event)
+        case .panel:
+            panelDrag = (point, point)
         }
     }
 
@@ -613,6 +645,11 @@ final class CanvasNSView: NSView {
         if compositionMouseDragged(to: point) { return }
         if let drag = gradientDrag {
             gradientDrag = (drag.start, point)
+            needsDisplay = true
+            return
+        }
+        if let drag = panelDrag {
+            panelDrag = (drag.start, point)
             needsDisplay = true
             return
         }
@@ -676,6 +713,17 @@ final class CanvasNSView: NSView {
                 tools.noteColorUsed()
             } else if outline.count > 2 {
                 explainWhyNothingHappened()
+            }
+            return
+        }
+        if let drag = panelDrag {
+            panelDrag = nil
+            needsDisplay = true
+            if !document.cutPanel(from: drag.start, to: point) {
+                tools.notice = L(
+                    "コマを切るには、コマの端から端まで、横か縦に線を引いてください。細すぎるコマはできません。",
+                    "To cut a panel, draw a line across it from one side to the other. A panel can't be made too thin."
+                )
             }
             return
         }

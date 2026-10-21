@@ -262,11 +262,14 @@ public struct Component: Identifiable {
     public var allItems: [LayerItem] { looks.flatMap(\.items) }
 }
 
-/// What a picture keeps besides its layers: named colours, colour sets, parts.
+/// What a picture keeps besides its layers: named colours, colour sets,
+/// parts, and the panels of a comic page.
 public struct Library {
     public var swatches: [Swatch] = []
     public var themes: [ColorTheme] = []
     public var components: [Component] = []
+    /// How the page is divided into panels; nil for a plain picture.
+    public var page: PanelLayout?
     /// The colour set last chosen, if any.
     public var currentTheme: UUID?
     /// Changes whenever anything in it changes.
@@ -274,7 +277,7 @@ public struct Library {
 
     public init() {}
 
-    public var isEmpty: Bool { swatches.isEmpty && themes.isEmpty && components.isEmpty }
+    public var isEmpty: Bool { swatches.isEmpty && themes.isEmpty && components.isEmpty && page == nil }
 
     public func swatch(_ id: UUID) -> Swatch? { swatches.first { $0.id == id } }
     public func component(_ id: UUID) -> Component? { components.first { $0.id == id } }
@@ -432,13 +435,17 @@ public struct LayerStyle: Equatable {
     /// darker the paint, the bigger the dots. With layers clipped to it, they
     /// turn into dots too.
     public var tone: CGFloat = 0
+    /// On a page divided into panels, lies over the frames and is not kept
+    /// inside the panels, like speech balloons and sound effects.
+    public var overPanels = false
 
-    public init(blend: BlendMode = .normal, isClipped: Bool = false, glow: CGFloat = 0, blur: CGFloat = 0, tone: CGFloat = 0) {
+    public init(blend: BlendMode = .normal, isClipped: Bool = false, glow: CGFloat = 0, blur: CGFloat = 0, tone: CGFloat = 0, overPanels: Bool = false) {
         self.blend = blend
         self.isClipped = isClipped
         self.glow = glow
         self.blur = blur
         self.tone = tone
+        self.overPanels = overPanels
     }
 }
 
@@ -476,6 +483,8 @@ public enum Tool: String, CaseIterable, Identifiable {
     case eyedropper
     /// Posing the guide doll.
     case figure
+    /// Cutting a comic page into panels, like drawing a ruler across it.
+    case panel
 
     public var id: String { rawValue }
 }

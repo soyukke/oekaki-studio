@@ -17,7 +17,8 @@ import OekakiKit
 /// a clipped multiply layer and lights it with a gradient on an add layer.
 /// `OEKAKI_DEMO=multi`, `colors`, `parts`, `versions` and `compare` show
 /// picking many items, named colours and colour sets, parts, and versions;
-/// `parts-looks` gives a part a second drawing.
+/// `parts-looks` gives a part a second drawing, and `panels` cuts the page
+/// into comic panels and draws across them.
 /// `OEKAKI_DEMO=file` opens the document at `OEKAKI_FILE`, with the layer
 /// named `OEKAKI_LAYER` chosen if given. `OEKAKI_DEMO=shape` draws round an
 /// area with the lasso fill; `shape-done` lets go, so the area is filled.
@@ -73,6 +74,8 @@ enum DevSnapshot {
             case "parts-grow", "parts-grow-done":
                 drawSample(on: session.document)
                 drivePartsGrow(session: session, apply: ProcessInfo.processInfo.environment["OEKAKI_DEMO"] == "parts-grow-done")
+            case "panels":
+                drivePanels(session: session)
             case "parts-looks":
                 drawSample(on: session.document)
                 drivePartsLooks(session: session)
@@ -342,6 +345,44 @@ enum DevSnapshot {
         session.panel = .parts
         print("parts: \(document.uses(of: part).count) uses")
         return uses
+    }
+
+    /// The page cut into four panels, with lines begun inside a panel kept to
+    /// it, one begun between panels running across them, and a balloon on a
+    /// layer over the frames.
+    private static func drivePanels(session: Session) {
+        let document = session.document
+        let w = CGFloat(document.width), h = CGFloat(document.height)
+        document.cutPanel(from: CGPoint(x: w * 0.05, y: h * 0.42), to: CGPoint(x: w * 0.95, y: h * 0.42))
+        document.cutPanel(from: CGPoint(x: w * 0.58, y: h * 0.08), to: CGPoint(x: w * 0.58, y: h * 0.38))
+        document.cutPanel(from: CGPoint(x: w * 0.36, y: h * 0.48), to: CGPoint(x: w * 0.36, y: h * 0.92))
+        func line(_ points: [CGPoint], width: CGFloat = 10, color: RGBA = .black) {
+            guard document.beginStroke(at: StrokePoint(x: points[0].x, y: points[0].y), color: color, width: width, isEraser: false) else { return }
+            points.dropFirst().forEach { document.continueStroke(to: StrokePoint(x: $0.x, y: $0.y)) }
+            document.endStroke()
+        }
+        document.addLayer()
+        // Speed lines begun in the first panel, dragged far past it.
+        for index in 0..<7 {
+            let y = h * (0.12 + 0.035 * CGFloat(index))
+            line([CGPoint(x: w * 0.93, y: y), CGPoint(x: w * 0.2, y: y + h * 0.3)], width: 6)
+        }
+        // A shape filled in the big panel, bigger than the panel.
+        document.fillShape([CGPoint(x: w * 0.5, y: h * 0.55), CGPoint(x: w * 1.1, y: h * 0.6), CGPoint(x: w * 0.9, y: h * 1.1), CGPoint(x: w * 0.3, y: h * 1.0)], color: RGBA(hex: 0x9CA3AF))
+        // Begun in the gap, a line crosses into both panels below.
+        line([CGPoint(x: w * 0.2, y: h * 0.42), CGPoint(x: w * 0.5, y: h * 0.75)], width: 14, color: RGBA(hex: 0x2563EB))
+        document.addLayer()
+        document.renameLayer(document.activeLayerID, to: L("吹き出し", "Balloons"))
+        document.setLayerOverPanels(document.activeLayerID, true)
+        let center = CGPoint(x: w * 0.58, y: h * 0.42)
+        let balloon = (0...48).map { step -> CGPoint in
+            let angle = CGFloat(step) / 48 * 2 * .pi
+            return CGPoint(x: center.x + cos(angle) * w * 0.12, y: center.y + sin(angle) * h * 0.09)
+        }
+        document.fillShape(balloon, color: .white)
+        line(balloon, width: 5)
+        session.tools.tool = .panel
+        print("panels: \(document.panels.count) panels")
     }
 
     /// The sparkle given a second drawing, turned into an X, shown on the

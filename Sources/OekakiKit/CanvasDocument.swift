@@ -75,7 +75,12 @@ public final class CanvasDocument: ObservableObject {
     /// before it, and a sheet with the stroke's marks so far.
     private var liveBase: CGImage?
     private var liveMarks: CGContext?
+    /// The panel the live stroke was begun in, which it stays inside.
+    private var liveClip: CGRect?
     private lazy var compositor = Compositor(width: width, height: height)
+    /// The panel frames last drawn, and a count that changes when they do.
+    var framesDrawn: (page: PanelLayout, image: CGImage)?
+    var frameRevision = 0
     /// Where the canvas view's picture is put together.
     private lazy var screen = Raster.makeContext(width: width, height: height)
     lazy var fillScratch = FillScratch(width: width, height: height)
@@ -179,7 +184,7 @@ public final class CanvasDocument: ObservableObject {
         if let figure, figure.isVisible {
             downward { figure.draw(in: picture) }
         }
-        compositor.flatten(sheets(of: layers[...].filter { !$0.isComposition }), onto: picture)
+        compositor.flatten(sheets(of: layers[...].filter { !$0.isComposition }).withFrames(frameSheet()), onto: picture)
         // The plan goes over the picture, so it reads even where colour is painted.
         for layer in layers.filter(\.isComposition) where layer.isVisible {
             guard let image = liveImage(for: layer.id) else { continue }
@@ -223,7 +228,7 @@ public final class CanvasDocument: ObservableObject {
             picture.fill(bounds)
         }
         // Composition layers are a plan, not part of the picture or its lines.
-        compositor.flatten(sheets(of: layers.filter { !$0.isComposition }), onto: picture)
+        compositor.flatten(sheets(of: layers.filter { !$0.isComposition }).withFrames(frameSheet()), onto: picture)
         return picture
     }
 
@@ -242,7 +247,7 @@ public final class CanvasDocument: ObservableObject {
     public func layersImage(region: CGRect? = nil) -> CGImage? {
         let area = region.map { CGRect(x: $0.minX, y: CGFloat(height) - $0.maxY, width: $0.width, height: $0.height).integral } ?? bounds
         screen.clear(area)
-        compositor.flatten(sheets(of: layers), onto: screen, region: region)
+        compositor.flatten(sheets(of: layers).withFrames(frameSheet()), onto: screen, region: region)
         return Raster.liveImage(of: screen)
     }
 
@@ -265,6 +270,7 @@ public final class CanvasDocument: ObservableObject {
         stroke.softness = min(max(softness, 0), 1)
         liveStroke = stroke
         liveLayerID = layer.id
+        liveClip = panelClips(for: layer).first { $0.contains(point.point) }
         if stroke.isPlain {
             liveBase = nil
             liveMarks = nil
@@ -272,8 +278,18 @@ public final class CanvasDocument: ObservableObject {
             liveBase = cache.context.makeImage()
             liveMarks = Raster.makeLayerContext(width: self.width, height: height)
         }
-        drawLive(StrokeRenderer.drawPiece(of: stroke, endingAt: 0, in: liveMarks ?? cache.context), of: stroke, in: cache.context)
+        drawLive(clipped(liveMarks ?? cache.context) { StrokeRenderer.drawPiece(of: stroke, endingAt: 0, in: $0) }, of: stroke, in: cache.context)
         return true
+    }
+
+    /// Draws a piece of the live stroke inside the panel it was begun in.
+    private func clipped(_ context: CGContext, _ body: (CGContext) -> CGRect) -> CGRect {
+        guard let liveClip else { return body(context) }
+        context.saveGState()
+        context.clip(to: liveClip)
+        let touched = body(context)
+        context.restoreGState()
+        return touched.intersection(liveClip)
     }
 
     /// Shows the part of a live stroke just drawn. A plain stroke is already
@@ -299,7 +315,7 @@ public final class CanvasDocument: ObservableObject {
         }
         stroke.points.append(point)
         liveStroke = stroke
-        drawLive(StrokeRenderer.drawPiece(of: stroke, endingAt: stroke.points.count - 1, in: liveMarks ?? cache.context), of: stroke, in: cache.context)
+        drawLive(clipped(liveMarks ?? cache.context) { StrokeRenderer.drawPiece(of: stroke, endingAt: stroke.points.count - 1, in: $0) }, of: stroke, in: cache.context)
     }
 
     public func endStroke() {
@@ -307,7 +323,8 @@ public final class CanvasDocument: ObservableObject {
         liveStroke = nil
         liveLayerID = nil
         guard let index = layers.firstIndex(where: { $0.id == layerID }), let cache = caches[layerID] else { return }
-        drawLive(StrokeRenderer.drawTail(of: stroke, in: liveMarks ?? cache.context), of: stroke, in: cache.context)
+        drawLive(clipped(liveMarks ?? cache.context) { StrokeRenderer.drawTail(of: stroke, in: $0) }, of: stroke, in: cache.context)
+        liveClip = nil
         liveBase = nil
         liveMarks = nil
         pushUndo()
@@ -366,7 +383,7 @@ public final class CanvasDocument: ObservableObject {
         layers[index].revision = revisionCounter
         if let cache = caches[layers[index].id] {
             if !alreadyDrawn {
-                Raster.draw(item, in: cache.context)
+                Raster.draw(item, in: cache.context, panels: panelClips(for: layers[index]))
             }
             cache.revision = revisionCounter
         }
@@ -516,6 +533,18 @@ public final class CanvasDocument: ObservableObject {
     /// the dots off. A drag on a slider is one undo step.
     public func setLayerTone(_ id: UUID, _ spacing: CGFloat) {
         restyle(id, coalescing: "tone-\(id)") { $0.tone = min(max(spacing, 0), 64) }
+    }
+
+    /// Lays the layer over the panel frames of a comic page, with its items
+    /// free to run across the panels, as speech balloons do; or puts it back
+    /// under the frames, each item inside the panel it was begun in.
+    public func setLayerOverPanels(_ id: UUID, _ isOver: Bool) {
+        guard let index = layers.firstIndex(where: { $0.id == id }), layers[index].style.overPanels != isOver else { return }
+        restyle(id) { $0.overPanels = isOver }
+        revisionCounter += 1
+        layers[index].revision = revisionCounter
+        syncCaches()
+        invalidate(nil)
     }
 
     private func restyle(_ id: UUID, coalescing key: String? = nil, _ change: (inout LayerStyle) -> Void) {
@@ -899,11 +928,13 @@ public final class CanvasDocument: ObservableObject {
             if let cache = caches[layer.id] {
                 guard cache.revision != layer.revision else { continue }
                 Raster.clear(cache.context)
-                layer.items.forEach { Raster.draw($0, in: cache.context) }
+                let clips = panelClips(for: layer)
+                layer.items.forEach { Raster.draw($0, in: cache.context, panels: clips) }
                 cache.revision = layer.revision
             } else {
                 let context = Raster.makeLayerContext(width: width, height: height)
-                layer.items.forEach { Raster.draw($0, in: context) }
+                let clips = panelClips(for: layer)
+                layer.items.forEach { Raster.draw($0, in: context, panels: clips) }
                 caches[layer.id] = LayerCache(context: context, revision: layer.revision)
             }
         }

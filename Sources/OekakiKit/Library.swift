@@ -13,6 +13,13 @@ extension Library {
                 return L("部品の名前を「\(b.name)」にした", "Renamed a part to \"\(b.name)\"")
             }
         }
+        if page != old.page {
+            guard let page else { return L("コマ割りをやめた", "Stopped dividing the page") }
+            if page.root.count != old.page?.root.count {
+                return L("コマを切った（\(page.root.count) コマ）", "Cut a panel (\(page.root.count) panels)")
+            }
+            return L("コマの枠や間を変えた", "Changed the panel frames")
+        }
         if currentTheme != old.currentTheme, let theme = themes.first(where: { $0.id == currentTheme }) {
             return L("色の組を「\(theme.name)」にした", "Switched the colours to \"\(theme.name)\"")
         }
