@@ -212,6 +212,7 @@ private extension Tool {
         case .figure: return L("構図", "Composition")
         case .panel: return L("コマ割り", "Panels")
         case .balloon: return L("ふきだし", "Balloon")
+        case .sound: return L("効果音", "Sound Effect")
         }
     }
 
@@ -228,6 +229,7 @@ private extension Tool {
         case .figure: return "figure.arms.open"
         case .panel: return "rectangle.split.2x2"
         case .balloon: return "bubble.left"
+        case .sound: return "speaker.wave.2"
         }
     }
 
@@ -287,6 +289,11 @@ private extension Tool {
             return L(
                 "押したところに吹き出しを置きます。そのままドラッグすると、離したところにしっぽが向きます。置いた吹き出しからドラッグすると、しっぽの向きを変えられます。言葉は右の欄で書きます。",
                 "Click to put a balloon there; drag, and its tail points where you let go. Drag from a balloon to point its tail again. Write the words in the panel on the right."
+            )
+        case .sound:
+            return L(
+                "文字を並べたい向きにドラッグすると、効果音の描き文字が置けます。ドラッグした長さで文字の大きさが決まります。クリックだと、まっすぐ立てて置きます。置いた効果音からドラッグすると、向きを変えられます。言葉は右の欄で書きます。",
+                "Drag the way the letters should run to letter a sound effect; the length of the drag sets their size. A click puts them upright. Drag from one already there to turn it. Write the words in the panel on the right."
             )
         }
     }
@@ -1028,7 +1035,7 @@ extension LayerItem {
         case .group: return "square.stack.3d.up"
         case .gradient: return "circle.lefthalf.filled"
         case .instance: return "square.on.square.dashed"
-        case .balloon: return "bubble.left"
+        case .balloon(let balloon): return balloon.shape == .sound ? "speaker.wave.2" : "bubble.left"
         }
     }
 
@@ -1053,6 +1060,8 @@ extension LayerItem {
                 : L("まるいグラデーション", "A radial gradient")
         case .instance(let use):
             return L("部品を \(Int((use.placement.scale * 100).rounded()))% で置いたもの", "A part placed at \(Int((use.placement.scale * 100).rounded()))%")
+        case .balloon(let balloon) where balloon.shape == .sound:
+            return L("効果音の描き文字、\(balloon.vertical ? "縦書き" : "横書き")", "Sound effect lettering, written \(balloon.vertical ? "down" : "across")")
         case .balloon(let balloon):
             return L("\(balloon.shape.title)の吹き出し、\(balloon.vertical ? "縦書き" : "横書き")", "A \(balloon.shape.title.lowercased()) balloon, written \(balloon.vertical ? "down" : "across")")
         }

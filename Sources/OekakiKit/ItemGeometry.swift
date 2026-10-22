@@ -53,7 +53,7 @@ extension LayerItem {
         case .instance(let instance):
             return instance.content.contains { $0.paints(point, canvas: canvas, slack: slack) }
         case .balloon(let balloon):
-            return BalloonRenderer.bounds(balloon).insetBy(dx: -slack, dy: -slack).contains(point)
+            return BalloonRenderer.covers(balloon, point, slack: slack)
         }
     }
 

@@ -53,10 +53,12 @@ extension LayerItem {
             instance.content = instance.content.map { $0.transformed(by: t) }
             return .instance(instance)
         case .balloon(var balloon):
-            // The words stay upright, whichever way the rest turns.
+            // The words stay upright, whichever way the rest turns; a sound
+            // effect turns with it.
             balloon.center = balloon.center.applying(t)
             balloon.tail = balloon.tail?.applying(t)
             balloon.fontSize = max(4, balloon.fontSize * scale)
+            if balloon.shape == .sound { balloon.angle += atan2(t.b, t.a) }
             return .balloon(balloon)
         case .bitmap(let image, let alpha, let id):
             let side = CGRect(x: 0, y: 0, width: image.width, height: image.height)

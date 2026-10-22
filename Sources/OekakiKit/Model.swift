@@ -490,6 +490,8 @@ public enum Tool: String, CaseIterable, Identifiable {
     case panel
     /// Putting words in a balloon; a drag points its tail.
     case balloon
+    /// Lettering a sound effect; a drag sets the way the letters run.
+    case sound
 
     public var id: String { rawValue }
 }

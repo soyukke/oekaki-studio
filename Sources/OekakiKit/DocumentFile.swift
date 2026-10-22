@@ -19,7 +19,8 @@ public enum DocumentFile {
     /// 8 adds parts with several drawings (variations).
     /// 9 adds comic pages divided into panels, and layers laid over the frames.
     /// 10 adds speech balloons.
-    static let currentVersion = 10
+    /// 11 adds sound effects lettering.
+    static let currentVersion = 11
 
     public enum Failure: LocalizedError {
         case notADocument
@@ -228,6 +229,8 @@ public enum DocumentFile {
         var tail: [Double]?
         /// False when written across.
         var vertical: Bool?
+        /// How far a sound effect leans, in radians clockwise; nil when upright.
+        var angle: Double?
     }
 
     private struct FileGradient: Codable {
@@ -276,7 +279,7 @@ public enum DocumentFile {
                 return xid == yid && x === y && xa == ya
             case (.balloon(let x), .balloon(let y)):
                 return x.id == y.id && x.text == y.text && x.center == y.center && x.fontSize == y.fontSize && x.shape == y.shape
-                    && x.tail == y.tail && x.vertical == y.vertical
+                    && x.tail == y.tail && x.vertical == y.vertical && x.angle == y.angle
             case (.group(let x), .group(let y)):
                 return x.id == y.id && x.name == y.name && x.alpha == y.alpha && x.items.count == y.items.count
                     && zip(x.items, y.items).allSatisfy { same($0, $1) }
@@ -570,7 +573,8 @@ public enum DocumentFile {
         case .balloon(let balloon):
             let saved = FileBalloon(
                 text: balloon.text, center: [Double(balloon.center.x), Double(balloon.center.y)], size: Double(balloon.fontSize),
-                shape: balloon.shape.rawValue, tail: balloon.tail.map { [Double($0.x), Double($0.y)] }, vertical: balloon.vertical ? nil : false
+                shape: balloon.shape.rawValue, tail: balloon.tail.map { [Double($0.x), Double($0.y)] }, vertical: balloon.vertical ? nil : false,
+                angle: balloon.angle == 0 ? nil : Double(balloon.angle)
             )
             return FileItem(kind: "balloon", id: balloon.id, balloon: saved)
         }
@@ -625,7 +629,7 @@ public enum DocumentFile {
             let tail = saved.tail.flatMap { $0.count == 2 ? CGPoint(x: $0[0], y: $0[1]) : nil }
             return .balloon(BalloonItem(
                 id: item.id ?? 0, text: saved.text, center: CGPoint(x: saved.center[0], y: saved.center[1]), fontSize: CGFloat(saved.size),
-                shape: shape, tail: tail, vertical: saved.vertical ?? true
+                shape: shape, tail: tail, vertical: saved.vertical ?? true, angle: CGFloat(saved.angle ?? 0)
             ))
         case "group":
             guard let items = item.items else { throw Failure.damaged }

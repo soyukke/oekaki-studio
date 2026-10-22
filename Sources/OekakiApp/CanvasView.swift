@@ -70,6 +70,9 @@ final class CanvasNSView: NSView {
     /// A balloon being put down, or one whose tail is being pointed: where
     /// the drag began and is now, and the balloon if it was already there.
     private var balloonDrag: (start: CGPoint, end: CGPoint, balloon: Int?)?
+    /// A sound effect being lettered, or one being turned: from where the
+    /// letters start to where they end, and the sound effect if it was already there.
+    private var soundDrag: (start: CGPoint, end: CGPoint, sound: Int?)?
     /// The selection being dragged along: where the pointer was, the part of
     /// a pixel not moved yet, and the undo key of the drag.
     private var moving: (last: CGPoint, carry: CGVector, key: String)?
@@ -203,17 +206,18 @@ final class CanvasNSView: NSView {
     // MARK: Panels
 
     /// With the panel tool, each panel's place in reading order, and the cut
-    /// being drawn; with the balloon tool, the tail being pointed.
+    /// being drawn; with the balloon tool, the tail being pointed, and with
+    /// the sound effect tool, the way the letters will run.
     private func drawPanelGuide(in context: CGContext) {
         let accent = NSColor.controlAccentColor
         guard tools.tool == .panel else {
-            if let balloonDrag {
-                // The tail to be: from where the drag began to the pointer.
+            if let drag = balloonDrag.map({ ($0.start, $0.end) }) ?? soundDrag.map({ ($0.start, $0.end) }) {
+                // The tail or the letters to be: from where the drag began to the pointer.
                 context.setStrokeColor(accent.cgColor)
                 context.setLineWidth(2 * screenPixel)
                 context.setLineDash(phase: 0, lengths: [6 * screenPixel, 4 * screenPixel])
-                context.move(to: balloonDrag.start)
-                context.addLine(to: balloonDrag.end)
+                context.move(to: drag.0)
+                context.addLine(to: drag.1)
                 context.strokePath()
                 context.setLineDash(phase: 0, lengths: [])
             }
@@ -659,6 +663,13 @@ final class CanvasNSView: NSView {
             } else {
                 balloonDrag = (point, point, nil)
             }
+        case .sound:
+            let under = document.trace(point, slack: 4 * screenPixel)?.path.last
+            if let under, case .balloon(let found)? = document.item(under)?.item, found.shape == .sound {
+                soundDrag = (point, point, under)
+            } else {
+                soundDrag = (point, point, nil)
+            }
         }
     }
 
@@ -678,6 +689,11 @@ final class CanvasNSView: NSView {
         }
         if let drag = balloonDrag {
             balloonDrag = (drag.start, point, drag.balloon)
+            needsDisplay = true
+            return
+        }
+        if let drag = soundDrag {
+            soundDrag = (drag.start, point, drag.sound)
             needsDisplay = true
             return
         }
@@ -711,6 +727,43 @@ final class CanvasNSView: NSView {
         smoothed = next
         lastPressure = pressure(of: event)
         document.continueStroke(to: StrokePoint(x: next.x, y: next.y, pressure: lastPressure))
+    }
+
+    /// Letters a sound effect running from `start` to `end`, its size set by
+    /// the length; a click puts it upright. Dragged from one already there,
+    /// that one is turned to run the new way instead.
+    private func letterSound(from start: CGPoint, to end: CGPoint, turning id: Int?) {
+        let dx = end.x - start.x, dy = end.y - start.y
+        let length = hypot(dx, dy)
+        let dragged = length > 12 * screenPixel
+        // Down the page is upright for letters set down, across for letters set across.
+        func angle(_ vertical: Bool) -> CGFloat { vertical ? atan2(-dx, dy) : atan2(dy, dx) }
+        if let id {
+            tools.selection = [id]
+            guard dragged else { return }
+            document.updateItems([id]) { item in
+                guard case .balloon(var sound) = item else { return }
+                sound.angle = angle(sound.vertical)
+                item = .balloon(sound)
+            }
+            return
+        }
+        let vertical = Localization.isJapanese
+        let text = L("ドン", "BOOM")
+        var sound = BalloonItem(
+            text: text, center: start, fontSize: BalloonItem.fontSize(forCanvasWidth: document.width) * 2.5,
+            shape: .sound, vertical: vertical
+        )
+        if dragged {
+            sound.center = CGPoint(x: (start.x + end.x) / 2, y: (start.y + end.y) / 2)
+            sound.angle = angle(vertical)
+            sound.fontSize = max(16, (length / CGFloat(max(1, text.count))).rounded())
+        }
+        if let made = document.addBalloon(sound) {
+            tools.selection = [made]
+        } else {
+            explainWhyNothingHappened()
+        }
     }
 
     override func mouseUp(with event: NSEvent) {
@@ -767,6 +820,12 @@ final class CanvasNSView: NSView {
             } else {
                 explainWhyNothingHappened()
             }
+            return
+        }
+        if let drag = soundDrag {
+            soundDrag = nil
+            needsDisplay = true
+            letterSound(from: drag.start, to: point, turning: drag.sound)
             return
         }
         if let drag = panelDrag {

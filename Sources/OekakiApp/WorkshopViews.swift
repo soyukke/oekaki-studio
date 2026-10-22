@@ -311,7 +311,7 @@ extension SelectionInspector {
         }
     }
 
-    /// A balloon's words, its shape and its size.
+    /// A balloon's words, its shape and its size, and how far a sound effect leans.
     @ViewBuilder fileprivate func words(_ balloon: BalloonItem) -> some View {
         SectionTitle(text: L("言葉", "Words"))
         TextEditor(text: Binding(get: { balloon.text }, set: { text in change("balloon-text-\(balloon.id)") { $0.text = text } }))
@@ -333,19 +333,30 @@ extension SelectionInspector {
             value: Binding(get: { Double(balloon.fontSize) }, set: { size in change("balloon-size-\(balloon.id)") { $0.fontSize = CGFloat(size.rounded()) } }),
             range: 8...200
         )
+        if balloon.shape == .sound {
+            // Shown from -180° to 180°, however far it was turned.
+            let degrees = atan2(sin(balloon.angle), cos(balloon.angle)) * 180 / .pi
+            GuideSlider(
+                title: L("傾き", "Tilt"), text: "\(Int(degrees.rounded()))°",
+                value: Binding(get: { Double(degrees) }, set: { value in change("sound-lean-\(balloon.id)") { $0.angle = CGFloat(value) * .pi / 180 } }),
+                range: -180...180
+            )
+        }
         HStack(spacing: 8) {
             Toggle(L("縦書き", "Vertical"), isOn: Binding(get: { balloon.vertical }, set: { vertical in change { $0.vertical = vertical } }))
                 .toggleStyle(.checkbox)
                 .font(.system(size: 11))
             Spacer()
-            if balloon.tail != nil {
+            if balloon.tail != nil, balloon.shape != .sound {
                 Button(L("しっぽを消す", "Remove Tail")) { change { $0.tail = nil } }
                     .controlSize(.small)
             }
         }
-        Text(L("しっぽは、ふきだしの道具で吹き出しからドラッグすると向きを変えられます", "To point the tail, drag from the balloon with the Balloon tool"))
-            .font(.system(size: 10)).foregroundStyle(.secondary)
-            .fixedSize(horizontal: false, vertical: true)
+        if balloon.shape != .sound {
+            Text(L("しっぽは、ふきだしの道具で吹き出しからドラッグすると向きを変えられます", "To point the tail, drag from the balloon with the Balloon tool"))
+                .font(.system(size: 10)).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
     }
 
     /// The part's drawings: which one this copy shows, and making another

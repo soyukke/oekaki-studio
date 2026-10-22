@@ -18,7 +18,8 @@ import OekakiKit
 /// `OEKAKI_DEMO=multi`, `colors`, `parts`, `versions` and `compare` show
 /// picking many items, named colours and colour sets, parts, and versions;
 /// `parts-looks` gives a part a second drawing, and `panels` cuts the page
-/// into comic panels and draws across them; `balloons` adds words to it.
+/// into comic panels and draws across them; `balloons` adds words to it,
+/// and `sound` sound effects too, the leaning one picked.
 /// `OEKAKI_DEMO=file` opens the document at `OEKAKI_FILE`, with the layer
 /// named `OEKAKI_LAYER` chosen if given. `OEKAKI_DEMO=shape` draws round an
 /// area with the lasso fill; `shape-done` lets go, so the area is filled.
@@ -78,6 +79,8 @@ enum DevSnapshot {
                 drivePanels(session: session)
             case "balloons":
                 driveBalloons(session: session)
+            case "sound":
+                driveSound(session: session)
             case "parts-looks":
                 drawSample(on: session.document)
                 drivePartsLooks(session: session)
@@ -403,6 +406,24 @@ enum DevSnapshot {
         session.tools.tool = .balloon
         session.tools.selection = ids.prefix(1).map { $0 }
         print("balloons: \(ids.count) balloons")
+    }
+
+    /// The page of balloons with sound effects lettered over it: one leaning,
+    /// one drawn out long, and one across. The leaning one is picked.
+    private static func driveSound(session: Session) {
+        driveBalloons(session: session)
+        let document = session.document
+        let w = CGFloat(document.width), h = CGFloat(document.height)
+        let size = BalloonItem.fontSize(forCanvasWidth: document.width)
+        let shown: [BalloonItem] = [
+            BalloonItem(text: L("ドドン", "BOOM"), center: CGPoint(x: w * 0.45, y: h * 0.75), fontSize: size * 3, shape: .sound, angle: -0.3),
+            BalloonItem(text: L("ゴォーー", "RUMBLE"), center: CGPoint(x: w * 0.08, y: h * 0.25), fontSize: size * 2.2, shape: .sound),
+            BalloonItem(text: L("ザッ", "SWISH"), center: CGPoint(x: w * 0.4, y: h * 0.45), fontSize: size * 2, shape: .sound, vertical: false, angle: 0.15),
+        ]
+        let ids = shown.compactMap { document.addBalloon($0) }
+        session.tools.tool = .sound
+        session.tools.selection = ids.prefix(1).map { $0 }
+        print("sound: \(ids.count) sound effects")
     }
 
     /// The sparkle given a second drawing, turned into an X, shown on the

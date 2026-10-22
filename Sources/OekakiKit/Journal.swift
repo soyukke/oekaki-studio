@@ -533,6 +533,7 @@ extension LayerItem {
         case .instance: return L("部品 #\(id)", "Part #\(id)")
         case .balloon(let balloon):
             let words = balloon.text.replacingOccurrences(of: "\n", with: "")
+            if balloon.shape == .sound { return L("効果音「\(words.prefix(12))」", "Sound effect \"\(words.prefix(12))\"") }
             return L("吹き出し「\(words.prefix(12))」", "Balloon \"\(words.prefix(12))\"")
         }
     }
